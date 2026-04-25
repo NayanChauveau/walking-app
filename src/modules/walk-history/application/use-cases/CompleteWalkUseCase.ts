@@ -1,11 +1,14 @@
 import type { WalkRoute } from "@/src/modules/walk-route";
 
 import type { CompletedWalk } from "../../domain/entities/CompletedWalk";
-import { extractTraversedH3Cells } from "../../domain/services/TraversedH3CellsExtractor";
+import type { TraversedCellsPort } from "../ports/TraversedCellsPort";
 import type { WalkHistoryRepository } from "../ports/WalkHistoryRepository";
 
 export class CompleteWalkUseCase {
-  constructor(private readonly walkHistoryRepository: WalkHistoryRepository) {}
+  constructor(
+    private readonly walkHistoryRepository: WalkHistoryRepository,
+    private readonly traversedCells: TraversedCellsPort,
+  ) {}
 
   async execute(input: { route: WalkRoute }): Promise<CompletedWalk> {
     const nowIso = new Date().toISOString();
@@ -28,7 +31,9 @@ export class CompleteWalkUseCase {
       durationSeconds: input.route.durationSeconds,
       averageSpeedKmh,
       polyline: input.route.geometry,
-      traversedH3Cells: extractTraversedH3Cells(input.route.geometry),
+      traversedH3Cells: this.traversedCells.extractFromPolyline({
+        polyline: input.route.geometry,
+      }),
       start: firstPoint,
       end: lastPoint,
     };
