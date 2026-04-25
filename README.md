@@ -1,50 +1,78 @@
-# Welcome to your Expo app 👋
+# Walking App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Application mobile Expo / React Native qui genere automatiquement des parcours de marche en boucle autour d'un point de depart. L'utilisateur revient au meme endroit apres environ 1 heure de marche (environ 10 000 pas), avec un objectif central: proposer un trajet different chaque jour pour eviter la monotonie.
 
-## Get started
+## Vision du projet
 
-1. Install dependencies
+Le produit cherche a construire un moteur de generation de parcours:
 
-   ```bash
-   npm install
-   ```
+- non repetitifs (score de nouveaute base sur l'historique),
+- agreables (qualite de boucle et limitation des aller-retour),
+- locaux (zone proche du point de depart),
+- rapides (cible de generation inferieure a 3 secondes).
 
-2. Start the app
+Le MVP privilegie la simplicite: maximum de calcul local, peu d'appels reseau, et une UX minimale orientee action.
 
-   ```bash
-   npx expo start
-   ```
+## Fonctionnement du MVP
 
-In the output, you'll find options to open the app in a
+1. **Generation de candidats**
+   - Creation de plusieurs ellipses aleatoires autour du depart.
+   - Generation de 2 a 3 waypoints par ellipse.
+   - Depart positionne sur l'ellipse pour garantir une boucle.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+2. **Validation locale (sans API)**
+   - Snap des points sur un reseau marchable local (OpenStreetMap).
+   - Rejet des points trop eloignes d'un chemin valide.
+   - Geometrie locale avec Turf.js (distances, projections).
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+3. **Pre-filtrage local**
+   - Echantillonnage des ellipses en points intermediaires.
+   - Conversion en grille de cellules (environ 100 m).
+   - Calcul d'un score de nouveaute base sur l'historique utilisateur.
+   - Conservation des 3 a 5 meilleurs candidats seulement.
 
-## Get a fresh project
+4. **Routing externe**
+   - Appels a une API de routing (ex: OpenRouteService ou GraphHopper).
+   - Generation des boucles completes.
+   - Nombre d'appels limite (max 3 a 5) pour maitriser latence et cout.
 
-When you're ready, run:
+5. **Scoring final**
+   - Score de nouveaute (zones peu explorees).
+   - Score de qualite de boucle (eviter les segments aller-retour).
+   - Selection du meilleur trajet a afficher.
+
+6. **UX minimale**
+   - Affichage carte + trace du parcours.
+   - Boutons `Generer`, `Regenerer`, `Termine`.
+   - Stockage local de l'historique de marche.
+
+## Architecture technique
+
+- **Mobile only (MVP):** pas de backend obligatoire.
+- **Domain layer isolee:** logique metier separee de l'UI et des APIs.
+- **Calcul local prioritaire:** generation, validation et pre-scoring sur device.
+- **Routing externalise:** service dedie uniquement a la construction de trajets complets.
+
+Le module principal est situe dans `src/modules/walk-route`, avec une separation claire:
+
+- `domain/` pour les entites et services metier,
+- `application/` pour les use cases et ports,
+- `infrastructure/` pour les adapters (random, generation, routing).
+
+## Lancer le projet
 
 ```bash
-npm run reset-project
+npm install
+npm run start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Scripts utiles:
 
-## Learn more
+- `npm run ios`
+- `npm run android`
+- `npm run web`
+- `npm run lint`
 
-To learn more about developing your project with Expo, look at the following resources:
+## Documentation complementaire
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- `docs/mvp-architecture.md`: detail du pipeline de generation, scoring, contraintes et evolutions futures.
