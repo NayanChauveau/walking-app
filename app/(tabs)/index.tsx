@@ -12,16 +12,28 @@ import {
   type Coordinates,
   type WalkRoute,
 } from "@/src/modules/walk-route";
+import type { RecentWalkCellsPort } from "@/src/modules/walk-route/application/ports/RecentWalkCellsPort";
 import {
   createWalkHistoryModule,
   type WalkInsights,
 } from "@/src/modules/walk-history";
 
+const {
+  completeWalkUseCase,
+  getRecentWalkCellsUseCase,
+  getWalkInsightsUseCase,
+} = createWalkHistoryModule();
+
+const recentWalkCellsPort: RecentWalkCellsPort = {
+  async listRecentTraversedCells(limit: number) {
+    return getRecentWalkCellsUseCase.execute({ limit });
+  },
+};
+
 const { generateWalkRouteUseCase } = createWalkRouteModule({
   openRouteServiceApiKey: process.env.EXPO_PUBLIC_OPENROUTESERVICE_API_KEY!,
+  recentWalkCells: recentWalkCellsPort,
 });
-
-const { completeWalkUseCase, getWalkInsightsUseCase } = createWalkHistoryModule();
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();

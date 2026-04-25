@@ -38,8 +38,6 @@ export class CompleteWalkUseCase {
       end: lastPoint,
     };
 
-    console.log("[walk-history] completedWalk", completedWalk);
-
     await this.walkHistoryRepository.save(completedWalk);
 
     return completedWalk;
