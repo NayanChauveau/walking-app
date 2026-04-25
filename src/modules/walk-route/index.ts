@@ -1,7 +1,3 @@
-export { GenerateEllipseForWalkUseCase } from "./application/use-cases/GenerateEllipseForWalkUseCase";
-export { GenerateWalkCandidateUseCase } from "./application/use-cases/GenerateWalkCandidateUseCase";
-export { GenerateWalkRouteUseCase } from "./application/use-cases/GenerateWalkRouteUseCase";
-
 export { createWalkRouteModule } from "./infrastructure/createWalkRouteModule";
 
 export type { Ellipse } from "./domain/entities/Ellipse";

@@ -1,6 +1,8 @@
+import { GenerateEllipseForWalkUseCase } from "../application/use-cases/GenerateEllipseForWalkUseCase";
+import { GenerateWalkCandidateUseCase } from "../application/use-cases/GenerateWalkCandidateUseCase";
 import { GenerateWalkRouteUseCase } from "../application/use-cases/GenerateWalkRouteUseCase";
-import { EllipseGenerator } from "../domain/services/EllipseGenerator";
-import { WaypointGenerator } from "../domain/services/WaypointGenerator";
+import { DomainEllipseGenerationAdapter } from "./generation/DomainEllipseGenerationAdapter";
+import { DomainWaypointGenerationAdapter } from "./generation/DomainWaypointGenerationAdapter";
 import { MathRandomAdapter } from "./random/MathRandomAdapter";
 import { OpenRouteServiceAdapter } from "./routing/OpenRouteServiceAdapter";
 
@@ -11,18 +13,25 @@ type Input = {
 export function createWalkRouteModule({ openRouteServiceApiKey }: Input) {
   const random = new MathRandomAdapter();
   const routing = new OpenRouteServiceAdapter(openRouteServiceApiKey);
-
-  const ellipseGenerator = new EllipseGenerator();
-  const waypointGenerator = new WaypointGenerator();
+  const ellipseGeneration = new DomainEllipseGenerationAdapter(random);
+  const waypointGeneration = new DomainWaypointGenerationAdapter();
 
   const generateWalkRouteUseCase = new GenerateWalkRouteUseCase(
-    random,
     routing,
-    ellipseGenerator,
-    waypointGenerator,
+    ellipseGeneration,
+    waypointGeneration,
+  );
+  const generateWalkCandidateUseCase = new GenerateWalkCandidateUseCase(
+    ellipseGeneration,
+    waypointGeneration,
+  );
+  const generateEllipseForWalkUseCase = new GenerateEllipseForWalkUseCase(
+    ellipseGeneration,
   );
 
   return {
+    generateEllipseForWalkUseCase,
+    generateWalkCandidateUseCase,
     generateWalkRouteUseCase,
   };
 }

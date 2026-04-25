@@ -1,10 +1,10 @@
 import { WalkCandidate } from "../../domain/entities/WalkCandidate";
+import { calculateTargetWalkingDistanceMeters } from "../../domain/services/WalkingDistanceCalculator";
 import type { WalkRoute } from "../../domain/entities/WalkRoute";
-import type { EllipseGenerator } from "../../domain/services/EllipseGenerator";
-import type { WaypointGenerator } from "../../domain/services/WaypointGenerator";
 import type { Coordinates } from "../../domain/value-objects/Coordinates";
-import type { RandomPort } from "../ports/RandomPort";
+import type { EllipseGenerationPort } from "../ports/EllipseGenerationPort";
 import type { RoutingPort } from "../ports/RoutingPort";
+import type { WaypointGenerationPort } from "../ports/WaypointGenerationPort";
 
 type Input = {
   start: Coordinates;
@@ -13,25 +13,22 @@ type Input = {
 
 export class GenerateWalkRouteUseCase {
   constructor(
-    private readonly random: RandomPort,
     private readonly routing: RoutingPort,
-    private readonly ellipseGenerator: EllipseGenerator,
-    private readonly waypointGenerator: WaypointGenerator,
+    private readonly ellipseGeneration: EllipseGenerationPort,
+    private readonly waypointGeneration: WaypointGenerationPort,
   ) {}
 
   async execute(input: Input): Promise<WalkRoute> {
-    const walkingSpeedMetersPerMinute = 80;
-
-    const targetDistanceMeters =
-      input.targetDurationMinutes * walkingSpeedMetersPerMinute;
-
-    const ellipse = this.ellipseGenerator.generate({
-      start: input.start,
-      targetDistanceMeters,
-      random: this.random,
+    const targetDistanceMeters = calculateTargetWalkingDistanceMeters({
+      targetDurationMinutes: input.targetDurationMinutes,
     });
 
-    const waypoints = this.waypointGenerator.generateOnEllipse({
+    const ellipse = this.ellipseGeneration.generate({
+      start: input.start,
+      targetDistanceMeters,
+    });
+
+    const waypoints = this.waypointGeneration.generateOnEllipse({
       ellipse,
     });
 

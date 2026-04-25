@@ -1,7 +1,7 @@
 import type { Ellipse } from "../../domain/entities/Ellipse";
-import { EllipseGenerator } from "../../domain/services/EllipseGenerator";
+import { calculateTargetWalkingDistanceMeters } from "../../domain/services/WalkingDistanceCalculator";
 import type { Coordinates } from "../../domain/value-objects/Coordinates";
-import type { RandomPort } from "../ports/RandomPort";
+import type { EllipseGenerationPort } from "../ports/EllipseGenerationPort";
 
 type Input = {
   start: Coordinates;
@@ -9,21 +9,16 @@ type Input = {
 };
 
 export class GenerateEllipseForWalkUseCase {
-  constructor(
-    private readonly random: RandomPort,
-    private readonly ellipseGenerator = new EllipseGenerator(),
-  ) {}
+  constructor(private readonly ellipseGeneration: EllipseGenerationPort) {}
 
   execute(input: Input): Ellipse {
-    const walkingSpeedMetersPerMinute = 80;
+    const targetDistanceMeters = calculateTargetWalkingDistanceMeters({
+      targetDurationMinutes: input.targetDurationMinutes,
+    });
 
-    const targetDistanceMeters =
-      input.targetDurationMinutes * walkingSpeedMetersPerMinute;
-
-    return this.ellipseGenerator.generate({
+    return this.ellipseGeneration.generate({
       start: input.start,
       targetDistanceMeters,
-      random: this.random,
     });
   }
 }
