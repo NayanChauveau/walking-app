@@ -1,6 +1,7 @@
 import type { WalkRoute } from "@/src/modules/walk-route";
 
 import type { CompletedWalk } from "../../domain/entities/CompletedWalk";
+import { extractTraversedH3Cells } from "../../domain/services/TraversedH3CellsExtractor";
 import type { WalkHistoryRepository } from "../ports/WalkHistoryRepository";
 
 export class CompleteWalkUseCase {
@@ -27,9 +28,12 @@ export class CompleteWalkUseCase {
       durationSeconds: input.route.durationSeconds,
       averageSpeedKmh,
       polyline: input.route.geometry,
+      traversedH3Cells: extractTraversedH3Cells(input.route.geometry),
       start: firstPoint,
       end: lastPoint,
     };
+
+    console.log("[walk-history] completedWalk", completedWalk);
 
     await this.walkHistoryRepository.save(completedWalk);
 

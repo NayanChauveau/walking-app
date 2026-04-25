@@ -33,8 +33,17 @@ export class FileSystemWalkHistoryRepository implements WalkHistoryRepository {
     await ensureHistoryFile();
 
     const content = await FileSystem.readAsStringAsync(HISTORY_FILE_PATH);
-    const parsed = JSON.parse(content) as CompletedWalk[];
+    const parsed = JSON.parse(content) as Array<
+      Omit<CompletedWalk, "traversedH3Cells"> & {
+        traversedH3Cells?: string[];
+      }
+    >;
 
-    return parsed.sort((a, b) => b.completedAtIso.localeCompare(a.completedAtIso));
+    const normalized = parsed.map((walk) => ({
+      ...walk,
+      traversedH3Cells: walk.traversedH3Cells ?? [],
+    }));
+
+    return normalized.sort((a, b) => b.completedAtIso.localeCompare(a.completedAtIso));
   }
 }

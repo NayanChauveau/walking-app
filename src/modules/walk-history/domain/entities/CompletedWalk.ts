@@ -7,6 +7,7 @@ export type CompletedWalk = {
   durationSeconds: number;
   averageSpeedKmh: number;
   polyline: Coordinates[];
+  traversedH3Cells: string[];
   start: Coordinates;
   end: Coordinates;
 };
