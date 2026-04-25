@@ -1,6 +1,7 @@
+import { WalkCandidate } from "../../domain/entities/WalkCandidate";
 import type { WalkRoute } from "../../domain/entities/WalkRoute";
-import { EllipseGenerator } from "../../domain/services/EllipseGenerator";
-import { WaypointGenerator } from "../../domain/services/WaypointGenerator";
+import type { EllipseGenerator } from "../../domain/services/EllipseGenerator";
+import type { WaypointGenerator } from "../../domain/services/WaypointGenerator";
 import type { Coordinates } from "../../domain/value-objects/Coordinates";
 import type { RandomPort } from "../ports/RandomPort";
 import type { RoutingPort } from "../ports/RoutingPort";
@@ -14,8 +15,8 @@ export class GenerateWalkRouteUseCase {
   constructor(
     private readonly random: RandomPort,
     private readonly routing: RoutingPort,
-    private readonly ellipseGenerator = new EllipseGenerator(),
-    private readonly waypointGenerator = new WaypointGenerator(),
+    private readonly ellipseGenerator: EllipseGenerator,
+    private readonly waypointGenerator: WaypointGenerator,
   ) {}
 
   async execute(input: Input): Promise<WalkRoute> {
@@ -34,10 +35,10 @@ export class GenerateWalkRouteUseCase {
       ellipse,
     });
 
-    const candidate = {
+    const candidate = WalkCandidate.create({
       ellipse,
       waypoints,
-    };
+    });
 
     return this.routing.getWalkingRoute({
       candidate,

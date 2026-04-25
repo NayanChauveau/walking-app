@@ -1,16 +1,15 @@
 import * as Location from "expo-location";
 import { useEffect, useState } from "react";
 import { Button, Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import Map from "@/components/map";
+
 import {
-  GenerateWalkRouteUseCase,
-  MathRandomAdapter,
-  OpenRouteServiceAdapter,
+  createWalkRouteModule,
   type Coordinates,
   type WalkRoute,
 } from "@/src/modules/walk-route";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function HomeScreen() {
   const [userCoordinates, setUserCoordinates] = useState<Coordinates | null>(
@@ -20,6 +19,11 @@ export default function HomeScreen() {
   const [route, setRoute] = useState<WalkRoute | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // init module une seule fois
+  const { generateWalkRouteUseCase } = createWalkRouteModule({
+    openRouteServiceApiKey: process.env.EXPO_PUBLIC_OPENROUTESERVICE_API_KEY!,
+  });
 
   useEffect(() => {
     async function loadUserLocation() {
@@ -53,14 +57,7 @@ export default function HomeScreen() {
       setIsGenerating(true);
       setError(null);
 
-      const useCase = new GenerateWalkRouteUseCase(
-        new MathRandomAdapter(),
-        new OpenRouteServiceAdapter(
-          process.env.EXPO_PUBLIC_OPENROUTESERVICE_API_KEY!,
-        ),
-      );
-
-      const generatedRoute = await useCase.execute({
+      const generatedRoute = await generateWalkRouteUseCase.execute({
         start: userCoordinates,
         targetDurationMinutes: 60,
       });
