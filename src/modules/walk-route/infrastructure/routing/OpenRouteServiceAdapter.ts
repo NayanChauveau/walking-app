@@ -78,6 +78,8 @@ export class OpenRouteServiceAdapter implements RoutingPort {
       candidate,
       geometry,
       distanceMeters: feature.properties.summary.distance,
+      // API estimate used for route preview; completion flow should later
+      // replace it with user-measured elapsed duration.
       durationSeconds: feature.properties.summary.duration,
     };
   }

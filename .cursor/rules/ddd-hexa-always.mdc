@@ -1,0 +1,20 @@
+---
+description: Enforce DDD + Hexagonal architecture by default
+alwaysApply: true
+---
+
+# DDD + Hexa obligatoire
+
+- Concevoir les fonctionnalités en couches explicites: `domain`, `application`, `infrastructure`.
+- Garder le `domain` pur (pas de dépendance framework, UI, I/O, API, storage).
+- L'`application` orchestre via des use cases et dépend uniquement de ports/interfaces.
+- Les détails techniques sont en `infrastructure` (adapters implémentant les ports).
+- L'UI ne parle jamais directement aux adapters techniques; elle passe par des use cases.
+- Préférer un module factory `create...Module` pour composer les dépendances.
+
+## Checklist avant de livrer
+
+- Les règles métier sont dans `domain`.
+- Les ports nécessaires sont définis côté `application`.
+- Les adapters sont isolés en `infrastructure`.
+- Les écrans/composants appellent des use cases, pas des repositories concrets.
