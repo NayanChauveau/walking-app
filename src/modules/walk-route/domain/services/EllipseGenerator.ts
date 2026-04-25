@@ -1,4 +1,4 @@
-import type { RandomPort } from "../../application/ports/RandomPort";
+import type { RandomPort } from "../ports/RandomPort";
 import type { Ellipse } from "../entities/Ellipse";
 import type { Coordinates } from "../value-objects/Coordinates";
 

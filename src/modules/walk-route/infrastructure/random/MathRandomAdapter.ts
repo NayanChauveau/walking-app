@@ -1,4 +1,4 @@
-import type { RandomPort } from "../../application/ports/RandomPort";
+import type { RandomPort } from "../../domain/ports/RandomPort";
 
 export class MathRandomAdapter implements RandomPort {
   next(): number {
