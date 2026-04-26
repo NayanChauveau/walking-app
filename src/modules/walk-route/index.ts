@@ -1,6 +1,7 @@
 export { createWalkRouteModule } from "./infrastructure/createWalkRouteModule";
 
 export type { RecentWalkCellsPort } from "./application/ports/RecentWalkCellsPort";
+export type { H3ScoringPort } from "./application/ports/H3ScoringPort";
 export type { UserStartPointPort } from "./application/ports/UserStartPointPort";
 export type { UserStartPointCachePort } from "./application/ports/UserStartPointCachePort";
 export type { Ellipse } from "./domain/entities/Ellipse";

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Button, ScrollView, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -91,7 +91,7 @@ export default function HomeScreen() {
     return distanceMeters >= 15;
   }
 
-  async function resolveUserStartPoint() {
+  const resolveUserStartPoint = useCallback(async () => {
     setIsResolvingStartPoint(true);
 
     try {
@@ -112,7 +112,7 @@ export default function HomeScreen() {
     } finally {
       setIsResolvingStartPoint(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     async function loadLastKnownUserLocation() {
@@ -134,7 +134,7 @@ export default function HomeScreen() {
 
     loadLastKnownUserLocation();
     loadUserLocation();
-  }, []);
+  }, [resolveUserStartPoint]);
 
   useEffect(() => {
     async function loadHistoryInsights() {

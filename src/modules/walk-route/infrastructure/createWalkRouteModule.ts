@@ -1,4 +1,6 @@
 import { GetLastKnownUserStartPointUseCase } from "../application/use-cases/GetLastKnownUserStartPointUseCase";
+import { GenerateWaypointCandidatesUseCase } from "../application/use-cases/GenerateWaypointCandidatesUseCase";
+import { PreScoreWaypointCandidatesUseCase } from "../application/use-cases/PreScoreWaypointCandidatesUseCase";
 import { GenerateEllipseForWalkUseCase } from "../application/use-cases/GenerateEllipseForWalkUseCase";
 import { GenerateWalkCandidateUseCase } from "../application/use-cases/GenerateWalkCandidateUseCase";
 import { GetUserStartPointUseCase } from "../application/use-cases/GetUserStartPointUseCase";
@@ -8,6 +10,7 @@ import { GenerateWalkRouteUseCase } from "../application/use-cases/GenerateWalkR
 import { DomainEllipseGenerationAdapter } from "./generation/DomainEllipseGenerationAdapter";
 import { DomainWaypointGenerationAdapter } from "./generation/DomainWaypointGenerationAdapter";
 import { H3PolylineCellsAdapter } from "./h3/H3PolylineCellsAdapter";
+import { H3WaypointCandidateScoringAdapter } from "./h3/H3WaypointCandidateScoringAdapter";
 import { ExpoUserStartPointAdapter } from "./location/ExpoUserStartPointAdapter";
 import { FileSystemUserStartPointCacheAdapter } from "./location/FileSystemUserStartPointCacheAdapter";
 import { MathRandomAdapter } from "./random/MathRandomAdapter";
@@ -27,13 +30,14 @@ export function createWalkRouteModule({
   const ellipseGeneration = new DomainEllipseGenerationAdapter(random);
   const waypointGeneration = new DomainWaypointGenerationAdapter();
   const polylineCells = new H3PolylineCellsAdapter();
+  const h3Scoring = new H3WaypointCandidateScoringAdapter();
   const userStartPoint = new ExpoUserStartPointAdapter();
   const userStartPointCache = new FileSystemUserStartPointCacheAdapter();
 
   const generateWalkRouteUseCase = new GenerateWalkRouteUseCase(
     routing,
-    ellipseGeneration,
-    waypointGeneration,
+    new GenerateWaypointCandidatesUseCase(ellipseGeneration, waypointGeneration),
+    new PreScoreWaypointCandidatesUseCase(h3Scoring),
     recentWalkCells,
     polylineCells,
   );

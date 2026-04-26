@@ -1,14 +1,15 @@
-import { WalkCandidate } from "../../domain/entities/WalkCandidate";
-import { calculateTargetWalkingDistanceMeters } from "../../domain/services/WalkingDistanceCalculator";
-import type { Ellipse } from "../../domain/entities/Ellipse";
-import type { Waypoint } from "../../domain/entities/Waypoint";
 import type { WalkRoute } from "../../domain/entities/WalkRoute";
 import type { Coordinates } from "../../domain/value-objects/Coordinates";
-import type { EllipseGenerationPort } from "../ports/EllipseGenerationPort";
 import type { PolylineCellsPort } from "../ports/PolylineCellsPort";
 import type { RecentWalkCellsPort } from "../ports/RecentWalkCellsPort";
 import type { RoutingPort } from "../ports/RoutingPort";
-import type { WaypointGenerationPort } from "../ports/WaypointGenerationPort";
+import {
+  GenerateWaypointCandidatesUseCase,
+} from "./GenerateWaypointCandidatesUseCase";
+import {
+  PreScoreWaypointCandidatesUseCase,
+  type PreScoredWaypointCandidate,
+} from "./PreScoreWaypointCandidatesUseCase";
 
 type Input = {
   start: Coordinates;
@@ -17,19 +18,18 @@ type Input = {
 
 export class GenerateWalkRouteUseCase {
   private static readonly MAX_CONCURRENT_ROUTING_REQUESTS = 3;
+  private static readonly SHORTLIST_TARGET = 5;
+  private static readonly SHORTLIST_MIN = 3;
 
   constructor(
     private readonly routing: RoutingPort,
-    private readonly ellipseGeneration: EllipseGenerationPort,
-    private readonly waypointGeneration: WaypointGenerationPort,
+    private readonly generateWaypointCandidates: GenerateWaypointCandidatesUseCase,
+    private readonly preScoreWaypointCandidates: PreScoreWaypointCandidatesUseCase,
     private readonly recentWalkCells: RecentWalkCellsPort,
     private readonly polylineCells: PolylineCellsPort,
   ) {}
 
   async execute(input: Input): Promise<WalkRoute> {
-    const targetDistanceMeters = calculateTargetWalkingDistanceMeters({
-      targetDurationMinutes: input.targetDurationMinutes,
-    });
     const recentWalkCells = await this.recentWalkCells.listRecentTraversedCells(100);
     const seenCells = new Set(recentWalkCells.flat());
     console.log("[walk-route] novelty baseline", {
@@ -41,43 +41,23 @@ export class GenerateWalkRouteUseCase {
     let bestScore = Number.NEGATIVE_INFINITY;
     let testedCandidates = 0;
 
-    const waypointPhaseOffsets = [0, 0.125, 0.25];
-    const routingCandidates: Array<{
-      ellipseIndex: number;
-      phaseOffset: number;
-      candidate: WalkCandidate;
-      waypoints: Waypoint[];
-    }> = [];
+    const generatedCandidates = this.generateWaypointCandidates.execute({
+      start: input.start,
+      targetDurationMinutes: input.targetDurationMinutes,
+      minCandidates: 20,
+      maxCandidates: 50,
+    });
+    const preScoredCandidates = this.preScoreWaypointCandidates.execute({
+      candidates: generatedCandidates,
+      seenCells,
+    });
+    const routingCandidates = this.selectTopCandidates(preScoredCandidates);
 
-    for (let ellipseIndex = 0; ellipseIndex < 4; ellipseIndex += 1) {
-      const ellipse = this.ellipseGeneration.generate({
-        start: input.start,
-        targetDistanceMeters,
-      });
-
-      const baseWaypoints = this.waypointGeneration.generateOnEllipse({
-        ellipse,
-      });
-
-      for (const phaseOffset of waypointPhaseOffsets) {
-        const variedWaypoints = this.buildWaypointVariant({
-          waypoints: baseWaypoints,
-          ellipse,
-          phaseOffset,
-        });
-
-        const candidate = WalkCandidate.create({
-          ellipse,
-          waypoints: variedWaypoints,
-        });
-        routingCandidates.push({
-          ellipseIndex,
-          phaseOffset,
-          candidate,
-          waypoints: variedWaypoints,
-        });
-      }
-    }
+    console.log("[walk-route] generated waypoint candidates", {
+      generatedCandidates: generatedCandidates.length,
+      shortlistedCandidates: routingCandidates.length,
+      shortlistTopScore: Number((routingCandidates[0]?.preScore ?? 0).toFixed(4)),
+    });
 
     let nextCandidateIndex = 0;
     const workerCount = Math.min(
@@ -90,7 +70,8 @@ export class GenerateWalkRouteUseCase {
         const candidateIndex = nextCandidateIndex;
         nextCandidateIndex += 1;
 
-        const routingCandidate = routingCandidates[candidateIndex];
+        const routingCandidate: PreScoredWaypointCandidate | undefined =
+          routingCandidates[candidateIndex];
         if (!routingCandidate) {
           return;
         }
@@ -112,6 +93,7 @@ export class GenerateWalkRouteUseCase {
           console.log("[walk-route] candidate evaluated", {
             ellipseIndex: routingCandidate.ellipseIndex,
             phaseOffset: routingCandidate.phaseOffset,
+            preScore: Number(routingCandidate.preScore.toFixed(4)),
             distanceKm: Number((route.distanceMeters / 1000).toFixed(2)),
             durationMin: Math.round(route.durationSeconds / 60),
             traversedCells: traversedCells.length,
@@ -133,6 +115,7 @@ export class GenerateWalkRouteUseCase {
             {
               ellipseIndex: routingCandidate.ellipseIndex,
               phaseOffset: routingCandidate.phaseOffset,
+              preScore: Number(routingCandidate.preScore.toFixed(4)),
               routingError,
             },
           );
@@ -178,58 +161,19 @@ export class GenerateWalkRouteUseCase {
     return novelRatio + novelCount * 0.001;
   }
 
-  private buildWaypointVariant(input: {
-    waypoints: Waypoint[];
-    ellipse: Ellipse;
-    phaseOffset: number;
-  }): Waypoint[] {
-    return input.waypoints.map((waypoint) => {
-      if (waypoint.role === "start") {
-        return waypoint;
-      }
+  private selectTopCandidates(
+    candidates: PreScoredWaypointCandidate[],
+  ): PreScoredWaypointCandidate[] {
+    const shortlistSize = Math.min(
+      GenerateWalkRouteUseCase.SHORTLIST_TARGET,
+      candidates.length,
+    );
+    const topCandidates = candidates.slice(0, shortlistSize);
 
-      const shiftedPosition =
-        (waypoint.positionOnEllipse + input.phaseOffset) % 1;
+    if (topCandidates.length < GenerateWalkRouteUseCase.SHORTLIST_MIN) {
+      throw new Error("Not enough candidates after local pre-scoring");
+    }
 
-      return {
-        ...waypoint,
-        positionOnEllipse: shiftedPosition,
-        coordinates: this.getPointOnEllipse(input.ellipse, shiftedPosition),
-      };
-    });
-  }
-
-  private getPointOnEllipse(ellipse: Ellipse, position: number): Coordinates {
-    const angle = position * Math.PI * 2;
-
-    const x = ellipse.semiMajorMeters * Math.cos(angle);
-    const y = ellipse.semiMinorMeters * Math.sin(angle);
-
-    const rotatedX =
-      x * Math.cos(ellipse.rotationRadians) -
-      y * Math.sin(ellipse.rotationRadians);
-
-    const rotatedY =
-      x * Math.sin(ellipse.rotationRadians) +
-      y * Math.cos(ellipse.rotationRadians);
-
-    return this.offsetCoordinates(ellipse.center, rotatedX, rotatedY);
-  }
-
-  private offsetCoordinates(
-    origin: Coordinates,
-    eastMeters: number,
-    northMeters: number,
-  ): Coordinates {
-    const earthRadiusMeters = 6_371_000;
-    const deltaLatitude = northMeters / earthRadiusMeters;
-    const deltaLongitude =
-      eastMeters /
-      (earthRadiusMeters * Math.cos((origin.latitude * Math.PI) / 180));
-
-    return {
-      latitude: origin.latitude + (deltaLatitude * 180) / Math.PI,
-      longitude: origin.longitude + (deltaLongitude * 180) / Math.PI,
-    };
+    return topCandidates;
   }
 }
