@@ -54,6 +54,7 @@ const {
 const DEFAULT_USER_WEIGHT_KG = 70;
 const WALKING_MET = 3.5;
 const LOCAL_POI_DOWNLOAD_RADIUS_METERS = 2500;
+type RouteSelectionMode = "novelty" | "poi";
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
@@ -64,6 +65,8 @@ export default function HomeScreen() {
   );
 
   const [route, setRoute] = useState<WalkRoute | null>(null);
+  const [selectedRouteMode, setSelectedRouteMode] =
+    useState<RouteSelectionMode>("novelty");
   const [isGenerating, setIsGenerating] = useState(false);
   const [, setIsSavingWalk] = useState(false);
   const [isGpsTracking, setIsGpsTracking] = useState(false);
@@ -197,6 +200,7 @@ export default function HomeScreen() {
       });
 
       setRoute(generatedRoute);
+      setSelectedRouteMode("novelty");
     } catch (generationError) {
       console.error(generationError);
       if (generationError instanceof Error && generationError.message.includes("POI")) {
@@ -223,8 +227,39 @@ export default function HomeScreen() {
     return WALKING_MET * DEFAULT_USER_WEIGHT_KG * durationHours;
   }
 
+  function buildSelectedRoute(selected: WalkRoute | null): WalkRoute | null {
+    if (!selected) {
+      return null;
+    }
+
+    const selectedAlternative =
+      selectedRouteMode === "poi"
+        ? selected.alternatives?.poi
+        : selected.alternatives?.novelty;
+
+    if (!selectedAlternative) {
+      return selected;
+    }
+
+    return {
+      ...selected,
+      geometry: selectedAlternative.geometry,
+      distanceMeters: selectedAlternative.distanceMeters,
+      durationSeconds: selectedAlternative.durationSeconds,
+      scoring: selectedAlternative.scoring,
+    };
+  }
+
+  const selectedRoute = buildSelectedRoute(route);
+  const secondaryRouteGeometry =
+    !isGpsTracking && route
+      ? selectedRouteMode === "novelty"
+        ? (route.alternatives?.poi?.geometry ?? [])
+        : (route.alternatives?.novelty?.geometry ?? [])
+      : [];
+
   async function handleStartGpsTracking() {
-    if (!route || isGpsTracking) {
+    if (!selectedRoute || isGpsTracking) {
       return;
     }
 
@@ -261,7 +296,7 @@ export default function HomeScreen() {
           setGpsTrackedPath((previousPath) => [...previousPath, nextCoordinates]);
           setTrackingStats((previousStats) =>
             aggregateTrackingSessionStatsUseCase.execute({
-              routeGeometry: route.geometry,
+              routeGeometry: selectedRoute.geometry,
               currentSample: {
                 coordinates: nextCoordinates,
                 timestampMs: sampleTimestampMs,
@@ -309,7 +344,7 @@ export default function HomeScreen() {
   }
 
   async function handleAcceptStopTracking() {
-    if (!route) {
+    if (!selectedRoute) {
       setIsStopTrackingModalVisible(false);
       return;
     }
@@ -322,7 +357,7 @@ export default function HomeScreen() {
       setSuccessMessage(null);
 
       await completeWalkUseCase.execute({
-        route,
+        route: selectedRoute,
         actualPath: gpsTrackedPath.length > 1 ? gpsTrackedPath : undefined,
         actualDurationSeconds: trackedDurationSeconds,
         actualDistanceMeters: trackingStats.trackedDistanceMeters,
@@ -330,6 +365,7 @@ export default function HomeScreen() {
       });
       setSuccessMessage("Parcours enregistre. Bravo !");
       setRoute(null);
+      setSelectedRouteMode("novelty");
       resetTrackingState();
     } catch (storageError) {
       console.error(storageError);
@@ -342,6 +378,7 @@ export default function HomeScreen() {
 
   function handleDiscardTrackedWalk() {
     setRoute(null);
+    setSelectedRouteMode("novelty");
     resetTrackingState();
     setSuccessMessage("Parcours supprime.");
     setError(null);
@@ -454,7 +491,7 @@ export default function HomeScreen() {
         <Button
           title={isGpsTracking ? "Arreter le suivi GPS" : "Demarrer le parcours GPS"}
           onPress={isGpsTracking ? handleRequestStopGpsTracking : handleStartGpsTracking}
-          disabled={!route}
+          disabled={!selectedRoute}
         />
 
         {error ? <Text style={{ color: "#ff4d4f" }}>{error}</Text> : null}
@@ -480,18 +517,46 @@ export default function HomeScreen() {
           </Text>
         ) : null}
 
-        {route ? (
+        {selectedRoute ? (
           <>
+            {route?.alternatives?.poi || route?.alternatives?.novelty ? (
+              <View style={styles.routeSwitchRow}>
+                <Pressable
+                  style={[
+                    styles.routeSwitchButton,
+                    selectedRouteMode === "novelty" && styles.routeSwitchButtonSelected,
+                  ]}
+                  onPress={() => setSelectedRouteMode("novelty")}
+                  disabled={isGpsTracking}
+                >
+                  <Text style={[styles.routeSwitchLabel, { color: theme.text }]}>
+                    Route Novelty
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.routeSwitchButton,
+                    selectedRouteMode === "poi" && styles.routeSwitchButtonSelected,
+                  ]}
+                  onPress={() => setSelectedRouteMode("poi")}
+                  disabled={isGpsTracking || !route?.alternatives?.poi}
+                >
+                  <Text style={[styles.routeSwitchLabel, { color: theme.text }]}>
+                    Route POI
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
             <Text style={{ color: theme.text }}>
-              Distance : {(route.distanceMeters / 1000).toFixed(1)} km · Durée :{" "}
-              {Math.round(route.durationSeconds / 60)} min
+              Distance : {(selectedRoute.distanceMeters / 1000).toFixed(1)} km · Durée :{" "}
+              {Math.round(selectedRoute.durationSeconds / 60)} min
             </Text>
-            {route.scoring ? (
+            {selectedRoute.scoring ? (
               <Text style={{ color: theme.text }}>
-                Score global : {route.scoring.totalScore.toFixed(3)} · Loop:{" "}
-                {route.scoring.loopQualityScore.toFixed(3)} · Novelty:{" "}
-                {route.scoring.noveltyScore.toFixed(3)} · POI:{" "}
-                {route.scoring.poiPleasureScore.toFixed(3)}
+                Score global : {selectedRoute.scoring.totalScore.toFixed(3)} · Loop:{" "}
+                {selectedRoute.scoring.loopQualityScore.toFixed(3)} · Novelty:{" "}
+                {selectedRoute.scoring.noveltyScore.toFixed(3)} · POI:{" "}
+                {selectedRoute.scoring.poiPleasureScore.toFixed(3)}
               </Text>
             ) : null}
           </>
@@ -539,8 +604,9 @@ export default function HomeScreen() {
           >
             <Map
               userCoordinates={userCoordinates}
-              routeGeometry={route?.geometry ?? []}
-              traversedUntilIndex={route ? trackingStats.traversedRouteIndex : 0}
+              routeGeometry={selectedRoute?.geometry ?? []}
+              secondaryRouteGeometry={secondaryRouteGeometry}
+              traversedUntilIndex={selectedRoute ? trackingStats.traversedRouteIndex : 0}
               cameraOverride={
                 isGpsTracking && isCameraFollowingGps && gpsTrackedCoordinates
                   ? {
@@ -599,6 +665,26 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  routeSwitchRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  routeSwitchButton: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#8A8F98",
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  routeSwitchButtonSelected: {
+    borderColor: "#2F80ED",
+    backgroundColor: "rgba(47, 128, 237, 0.15)",
+  },
+  routeSwitchLabel: {
+    color: "#fff",
+    fontWeight: "600",
+  },
   modalBackdrop: {
     flex: 1,
     justifyContent: "center",

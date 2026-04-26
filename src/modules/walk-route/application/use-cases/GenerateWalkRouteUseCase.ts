@@ -1,4 +1,8 @@
-import type { WalkRoute } from "../../domain/entities/WalkRoute";
+import type {
+  WalkRoute,
+  WalkRouteAlternative,
+  WalkRouteScoring,
+} from "../../domain/entities/WalkRoute";
 import type { Coordinates } from "../../domain/value-objects/Coordinates";
 import { calculateTargetWalkingDistanceMeters } from "../../domain/services/WalkingDistanceCalculator";
 import type { PolylineCellsPort } from "../ports/PolylineCellsPort";
@@ -21,10 +25,19 @@ type Input = {
   targetDurationMinutes: number;
 };
 
+type ScoredAcceptedCandidate = {
+  route: WalkRoute;
+  scoreDetails: RouteScoreDetails;
+  traversedCellSet: Set<string>;
+  geometrySignature: string;
+};
+
 export class GenerateWalkRouteUseCase {
   private static readonly MAX_CONCURRENT_ROUTING_REQUESTS = 3;
-  private static readonly SHORTLIST_TARGET = 5;
+  private static readonly SHORTLIST_TARGET = 8;
   private static readonly SHORTLIST_MIN = 3;
+  private static readonly MAX_CANDIDATES_PER_ELLIPSE = 2;
+  private static readonly MAX_NOVELTY_POI_OVERLAP_RATIO = 0.7;
   private static readonly MIN_LOOP_QUALITY_SCORE = 0.85;
   private static readonly MAX_GENERATION_ATTEMPTS = 3;
 
@@ -47,6 +60,10 @@ export class GenerateWalkRouteUseCase {
     let fallbackBestRoute: WalkRoute | null = null;
     let fallbackBestRouteScore = Number.NEGATIVE_INFINITY;
     let fallbackBestRouteDetails: RouteScoreDetails | null = null;
+    let fallbackBestNoveltyRoute: WalkRoute | null = null;
+    let fallbackBestNoveltyDetails: RouteScoreDetails | null = null;
+    let fallbackBestPoiRoute: WalkRoute | null = null;
+    let fallbackBestPoiDetails: RouteScoreDetails | null = null;
     let fallbackBestRejectedRoute: WalkRoute | null = null;
     let fallbackBestRejectedScore = Number.NEGATIVE_INFINITY;
     let fallbackBestRejectedDetails: RouteScoreDetails | null = null;
@@ -58,10 +75,17 @@ export class GenerateWalkRouteUseCase {
     ) {
       let bestRoute: WalkRoute | null = null;
       let bestScore = Number.NEGATIVE_INFINITY;
+      let bestNoveltyRoute: WalkRoute | null = null;
+      let bestNoveltyScore = Number.NEGATIVE_INFINITY;
+      let bestNoveltyDetails: RouteScoreDetails | null = null;
+      let bestPoiRoute: WalkRoute | null = null;
+      let bestPoiScore = Number.NEGATIVE_INFINITY;
+      let bestPoiDetails: RouteScoreDetails | null = null;
       let bestRejectedRoute: WalkRoute | null = null;
       let bestRejectedScore = Number.NEGATIVE_INFINITY;
       let bestRouteScoreDetails: RouteScoreDetails | null = null;
       let bestRejectedScoreDetails: RouteScoreDetails | null = null;
+      const acceptedCandidates: ScoredAcceptedCandidate[] = [];
 
       const generatedCandidates = this.generateWaypointCandidates.execute({
         start: input.start,
@@ -123,6 +147,29 @@ export class GenerateWalkRouteUseCase {
               continue;
             }
 
+            acceptedCandidates.push({
+              route,
+              scoreDetails,
+              traversedCellSet: new Set(traversedCells),
+              geometrySignature: this.buildGeometrySignature(route.geometry),
+            });
+
+            if (scoreDetails.noveltyScore > bestNoveltyScore) {
+              bestNoveltyScore = scoreDetails.noveltyScore;
+              bestNoveltyRoute = route;
+              bestNoveltyDetails = scoreDetails;
+            }
+
+            if (
+              scoreDetails.loopQualityScore >=
+                GenerateWalkRouteUseCase.MIN_LOOP_QUALITY_SCORE &&
+              scoreDetails.poiPleasureScore > bestPoiScore
+            ) {
+              bestPoiScore = scoreDetails.poiPleasureScore;
+              bestPoiRoute = route;
+              bestPoiDetails = scoreDetails;
+            }
+
             if (scoreDetails.totalScore > bestScore) {
               bestScore = scoreDetails.totalScore;
               bestRoute = route;
@@ -145,6 +192,15 @@ export class GenerateWalkRouteUseCase {
 
       await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
+      const diversePoiCandidate = this.selectDiversePoiCandidate(
+        acceptedCandidates,
+        bestNoveltyRoute,
+      );
+      if (diversePoiCandidate) {
+        bestPoiRoute = diversePoiCandidate.route;
+        bestPoiDetails = diversePoiCandidate.scoreDetails;
+      }
+
       const bestLoopQualityScore =
         (bestRouteScoreDetails as RouteScoreDetails | null)?.loopQualityScore ?? 0;
 
@@ -155,10 +211,24 @@ export class GenerateWalkRouteUseCase {
           fallbackBestRouteDetails = bestRouteScoreDetails;
         }
 
+        if (bestNoveltyRoute && bestNoveltyDetails) {
+          fallbackBestNoveltyRoute = bestNoveltyRoute;
+          fallbackBestNoveltyDetails = bestNoveltyDetails;
+        }
+
+        if (bestPoiRoute && bestPoiDetails) {
+          fallbackBestPoiRoute = bestPoiRoute;
+          fallbackBestPoiDetails = bestPoiDetails;
+        }
+
         if (bestLoopQualityScore >= GenerateWalkRouteUseCase.MIN_LOOP_QUALITY_SCORE) {
           const selectedRoute = this.buildSelectedRoute(
             bestRoute,
             bestRouteScoreDetails,
+            bestNoveltyRoute,
+            bestNoveltyDetails,
+            bestPoiRoute,
+            bestPoiDetails,
           );
           return selectedRoute;
         }
@@ -193,7 +263,14 @@ export class GenerateWalkRouteUseCase {
           selectedLoopQualityScore: Number(fallbackLoopQualityScore.toFixed(4)),
         },
       );
-      return this.buildSelectedRoute(fallbackBestRoute, fallbackBestRouteDetails);
+      return this.buildSelectedRoute(
+        fallbackBestRoute,
+        fallbackBestRouteDetails,
+        fallbackBestNoveltyRoute,
+        fallbackBestNoveltyDetails,
+        fallbackBestPoiRoute,
+        fallbackBestPoiDetails,
+      );
     }
 
     if (fallbackBestRejectedRoute) {
@@ -206,6 +283,10 @@ export class GenerateWalkRouteUseCase {
       return this.buildSelectedRoute(
         fallbackBestRejectedRoute,
         fallbackBestRejectedDetails,
+        fallbackBestNoveltyRoute,
+        fallbackBestNoveltyDetails,
+        fallbackBestPoiRoute,
+        fallbackBestPoiDetails,
       );
     }
 
@@ -219,38 +300,184 @@ export class GenerateWalkRouteUseCase {
       GenerateWalkRouteUseCase.SHORTLIST_TARGET,
       candidates.length,
     );
-    const topCandidates = candidates.slice(0, shortlistSize);
+    const diversifiedCandidates: PreScoredWaypointCandidate[] = [];
+    const selectedByEllipse = new Map<number, number>();
 
-    if (topCandidates.length < GenerateWalkRouteUseCase.SHORTLIST_MIN) {
+    // First pass: guarantee broad ellipse coverage (max 1 per ellipse).
+    for (const candidate of candidates) {
+      if (diversifiedCandidates.length >= shortlistSize) {
+        break;
+      }
+      if (selectedByEllipse.has(candidate.ellipseIndex)) {
+        continue;
+      }
+      diversifiedCandidates.push(candidate);
+      selectedByEllipse.set(candidate.ellipseIndex, 1);
+    }
+
+    // Second pass: fill remaining slots while capping per-ellipse concentration.
+    for (const candidate of candidates) {
+      if (diversifiedCandidates.length >= shortlistSize) {
+        break;
+      }
+
+      if (diversifiedCandidates.includes(candidate)) {
+        continue;
+      }
+
+      const alreadySelectedForEllipse =
+        selectedByEllipse.get(candidate.ellipseIndex) ?? 0;
+      if (
+        alreadySelectedForEllipse >=
+        GenerateWalkRouteUseCase.MAX_CANDIDATES_PER_ELLIPSE
+      ) {
+        continue;
+      }
+
+      diversifiedCandidates.push(candidate);
+      selectedByEllipse.set(candidate.ellipseIndex, alreadySelectedForEllipse + 1);
+    }
+
+    if (diversifiedCandidates.length < GenerateWalkRouteUseCase.SHORTLIST_MIN) {
       throw new Error("Not enough candidates after local pre-scoring");
     }
 
-    return topCandidates;
+    return diversifiedCandidates;
   }
 
   private buildSelectedRoute(
     route: WalkRoute,
     scoreDetails: RouteScoreDetails | null,
+    noveltyRoute?: WalkRoute | null,
+    noveltyDetails?: RouteScoreDetails | null,
+    poiRoute?: WalkRoute | null,
+    poiDetails?: RouteScoreDetails | null,
   ): WalkRoute {
+    const noveltyAlternative = this.buildAlternativeRoute(
+      noveltyRoute,
+      noveltyDetails,
+    );
+    const poiAlternative = this.buildAlternativeRoute(poiRoute, poiDetails);
+
     return {
       ...route,
-      scoring: scoreDetails
-        ? {
-            totalScore: scoreDetails.totalScore,
-            noveltyScore: scoreDetails.noveltyScore,
-            loopQualityScore: scoreDetails.loopQualityScore,
-            targetDistanceScore: scoreDetails.targetDistanceScore,
-            targetDurationScore: scoreDetails.targetDurationScore,
-            poiPleasureScore: scoreDetails.poiPleasureScore,
-            parkProximityScore: scoreDetails.parkProximityScore,
-            waterProximityScore: scoreDetails.waterProximityScore,
-            backtrackRatio: scoreDetails.backtrackRatio,
-            revisitRatio: scoreDetails.revisitRatio,
-            repeatedEdgeRatio: scoreDetails.repeatedEdgeRatio,
-            isRejected: scoreDetails.isRejected,
-            rejectionReason: scoreDetails.rejectionReason,
-          }
-        : undefined,
+      scoring: this.mapRouteScore(scoreDetails),
+      alternatives:
+        noveltyAlternative || poiAlternative
+          ? {
+              novelty: noveltyAlternative,
+              poi: poiAlternative,
+            }
+          : undefined,
     };
+  }
+
+  private buildAlternativeRoute(
+    route: WalkRoute | null | undefined,
+    scoreDetails: RouteScoreDetails | null | undefined,
+  ): WalkRouteAlternative | undefined {
+    const scoring = this.mapRouteScore(scoreDetails ?? null);
+    if (!route || !scoring) {
+      return undefined;
+    }
+
+    return {
+      geometry: route.geometry,
+      distanceMeters: route.distanceMeters,
+      durationSeconds: route.durationSeconds,
+      scoring,
+    };
+  }
+
+  private mapRouteScore(
+    scoreDetails: RouteScoreDetails | null,
+  ): WalkRouteScoring | undefined {
+    if (!scoreDetails) {
+      return undefined;
+    }
+
+    return {
+      totalScore: scoreDetails.totalScore,
+      noveltyScore: scoreDetails.noveltyScore,
+      loopQualityScore: scoreDetails.loopQualityScore,
+      targetDistanceScore: scoreDetails.targetDistanceScore,
+      targetDurationScore: scoreDetails.targetDurationScore,
+      poiPleasureScore: scoreDetails.poiPleasureScore,
+      parkProximityScore: scoreDetails.parkProximityScore,
+      waterProximityScore: scoreDetails.waterProximityScore,
+      backtrackRatio: scoreDetails.backtrackRatio,
+      revisitRatio: scoreDetails.revisitRatio,
+      repeatedEdgeRatio: scoreDetails.repeatedEdgeRatio,
+      isRejected: scoreDetails.isRejected,
+      rejectionReason: scoreDetails.rejectionReason,
+    };
+  }
+
+  private selectDiversePoiCandidate(
+    acceptedCandidates: ScoredAcceptedCandidate[],
+    noveltyRoute: WalkRoute | null,
+  ): ScoredAcceptedCandidate | null {
+    if (!noveltyRoute || acceptedCandidates.length === 0) {
+      return null;
+    }
+
+    const noveltySignature = this.buildGeometrySignature(noveltyRoute.geometry);
+    const noveltyCellSet = new Set(
+      this.polylineCells.extractFromPolyline({ polyline: noveltyRoute.geometry }),
+    );
+
+    const poiSortedCandidates = [...acceptedCandidates].sort(
+      (left, right) =>
+        right.scoreDetails.poiPleasureScore - left.scoreDetails.poiPleasureScore,
+    );
+
+    for (const candidate of poiSortedCandidates) {
+      if (
+        candidate.scoreDetails.loopQualityScore <
+        GenerateWalkRouteUseCase.MIN_LOOP_QUALITY_SCORE
+      ) {
+        continue;
+      }
+
+      if (candidate.geometrySignature === noveltySignature) {
+        continue;
+      }
+
+      const overlapRatio = this.calculateCellOverlapRatio(
+        noveltyCellSet,
+        candidate.traversedCellSet,
+      );
+      if (overlapRatio <= GenerateWalkRouteUseCase.MAX_NOVELTY_POI_OVERLAP_RATIO) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private calculateCellOverlapRatio(
+    left: Set<string>,
+    right: Set<string>,
+  ): number {
+    if (left.size === 0 || right.size === 0) {
+      return 0;
+    }
+
+    let shared = 0;
+    for (const cell of left) {
+      if (right.has(cell)) {
+        shared += 1;
+      }
+    }
+
+    return shared / Math.min(left.size, right.size);
+  }
+
+  private buildGeometrySignature(geometry: Coordinates[]): string {
+    return geometry
+      .map(
+        (point) => `${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}`,
+      )
+      .join("|");
   }
 }

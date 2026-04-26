@@ -6,6 +6,7 @@ import type { Coordinates } from "@/src/modules/walk-route";
 type MapProps = {
   userCoordinates: Coordinates | null;
   routeGeometry?: Coordinates[];
+  secondaryRouteGeometry?: Coordinates[];
   traversedUntilIndex?: number;
   cameraOverride?: {
     coordinates: Coordinates;
@@ -44,6 +45,7 @@ function getCameraPositionForGeometry(geometry: Coordinates[]) {
 export default function Map({
   userCoordinates,
   routeGeometry = [],
+  secondaryRouteGeometry = [],
   traversedUntilIndex = 0,
   cameraOverride = null,
   onCameraMove,
@@ -107,6 +109,16 @@ export default function Map({
       : routeGeometry;
 
   const polylines = [
+    ...(secondaryRouteGeometry.length > 1
+      ? [
+          {
+            id: "secondary-route",
+            coordinates: secondaryRouteGeometry,
+            color: "#7A63D6",
+            width: 8,
+          },
+        ]
+      : []),
     ...(traversedCoordinates.length > 1
       ? [
           {
