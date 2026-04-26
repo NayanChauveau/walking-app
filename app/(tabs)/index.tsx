@@ -41,6 +41,7 @@ const recentWalkCellsPort: RecentWalkCellsPort = {
 
 const {
   aggregateTrackingSessionStatsUseCase,
+  ensureLocalPoiCoverageUseCase,
   generateWalkRouteUseCase,
   getLastKnownUserStartPointUseCase,
   getUserStartPointUseCase,
@@ -52,6 +53,7 @@ const {
 
 const DEFAULT_USER_WEIGHT_KG = 70;
 const WALKING_MET = 3.5;
+const LOCAL_POI_DOWNLOAD_RADIUS_METERS = 2500;
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
@@ -132,10 +134,20 @@ export default function HomeScreen() {
       setError(null);
 
       await saveLastKnownUserStartPointUseCase.execute({ startPoint });
+      await ensureLocalPoiCoverageUseCase.execute({
+        center: startPoint,
+        radiusMeters: LOCAL_POI_DOWNLOAD_RADIUS_METERS,
+      });
       return startPoint;
     } catch (locationError) {
       console.error(locationError);
-      setError("Position utilisateur indisponible.");
+      if (locationError instanceof Error && locationError.message.includes("POI")) {
+        setError(
+          "Position trouvee, mais impossible de charger les donnees POI locales. Verifie la connexion.",
+        );
+      } else {
+        setError("Position utilisateur indisponible.");
+      }
       return null;
     } finally {
       setIsResolvingStartPoint(false);
@@ -174,6 +186,10 @@ export default function HomeScreen() {
       setIsGenerating(true);
       setError(null);
       setSuccessMessage(null);
+      await ensureLocalPoiCoverageUseCase.execute({
+        center: userCoordinates,
+        radiusMeters: LOCAL_POI_DOWNLOAD_RADIUS_METERS,
+      });
 
       const generatedRoute = await generateWalkRouteUseCase.execute({
         start: userCoordinates,
@@ -183,7 +199,13 @@ export default function HomeScreen() {
       setRoute(generatedRoute);
     } catch (generationError) {
       console.error(generationError);
-      setError("Impossible de générer un parcours pour cette tentative.");
+      if (generationError instanceof Error && generationError.message.includes("POI")) {
+        setError(
+          "Impossible de charger les donnees POI locales. Verifie la connexion reseau et reessaie.",
+        );
+      } else {
+        setError("Impossible de générer un parcours pour cette tentative.");
+      }
     } finally {
       setIsGenerating(false);
     }

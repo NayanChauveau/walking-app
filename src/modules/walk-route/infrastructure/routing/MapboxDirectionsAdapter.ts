@@ -40,13 +40,6 @@ export class MapboxDirectionsAdapter implements RoutingPort {
       );
     }
 
-    console.log("[mapbox-directions] waypoint snap", {
-      before: input.waypoints.map((waypoint) => waypoint.coordinates),
-      after: snapResult.waypoints.map((waypoint) => waypoint.coordinates),
-      snappedWaypointsCount: snapResult.snappedWaypointsCount,
-      totalWaypointsCount: snapResult.totalWaypointsCount,
-    });
-
     const loopCoordinates = [
       ...snapResult.waypoints.map((waypoint) => waypoint.coordinates),
       snapResult.waypoints[0].coordinates,

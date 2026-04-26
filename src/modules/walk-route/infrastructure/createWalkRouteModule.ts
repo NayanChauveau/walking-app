@@ -5,6 +5,7 @@ import { ScoreGeneratedRoutesUseCase } from "../application/use-cases/ScoreGener
 import { GenerateEllipseForWalkUseCase } from "../application/use-cases/GenerateEllipseForWalkUseCase";
 import { GenerateWalkCandidateUseCase } from "../application/use-cases/GenerateWalkCandidateUseCase";
 import { AggregateTrackingSessionStatsUseCase } from "../application/use-cases/AggregateTrackingSessionStatsUseCase";
+import { EnsureLocalPoiCoverageUseCase } from "../application/use-cases/EnsureLocalPoiCoverageUseCase";
 import { GetUserStartPointUseCase } from "../application/use-cases/GetUserStartPointUseCase";
 import { SaveLastKnownUserStartPointUseCase } from "../application/use-cases/SaveLastKnownUserStartPointUseCase";
 import type { RecentWalkCellsPort } from "../application/ports/RecentWalkCellsPort";
@@ -15,7 +16,7 @@ import { H3PolylineCellsAdapter } from "./h3/H3PolylineCellsAdapter";
 import { H3WaypointCandidateScoringAdapter } from "./h3/H3WaypointCandidateScoringAdapter";
 import { ExpoUserStartPointAdapter } from "./location/ExpoUserStartPointAdapter";
 import { FileSystemUserStartPointCacheAdapter } from "./location/FileSystemUserStartPointCacheAdapter";
-import { LocalHeuristicPoiScoringAdapter } from "./poi/LocalHeuristicPoiScoringAdapter";
+import { LocalOsmPoiScoringAdapter } from "./poi/LocalOsmPoiScoringAdapter";
 import { MathRandomAdapter } from "./random/MathRandomAdapter";
 import { MapboxDirectionsAdapter } from "./routing/MapboxDirectionsAdapter";
 
@@ -34,7 +35,7 @@ export function createWalkRouteModule({
   const waypointGeneration = new DomainWaypointGenerationAdapter();
   const polylineCells = new H3PolylineCellsAdapter();
   const h3Scoring = new H3WaypointCandidateScoringAdapter();
-  const poiScoring = new LocalHeuristicPoiScoringAdapter();
+  const poiScoring = new LocalOsmPoiScoringAdapter(mapboxAccessToken);
   const userStartPoint = new ExpoUserStartPointAdapter();
   const userStartPointCache = new FileSystemUserStartPointCacheAdapter();
 
@@ -52,6 +53,7 @@ export function createWalkRouteModule({
   );
   const aggregateTrackingSessionStatsUseCase =
     new AggregateTrackingSessionStatsUseCase();
+  const ensureLocalPoiCoverageUseCase = new EnsureLocalPoiCoverageUseCase(poiScoring);
   const generateEllipseForWalkUseCase = new GenerateEllipseForWalkUseCase(
     ellipseGeneration,
   );
@@ -67,6 +69,7 @@ export function createWalkRouteModule({
     generateWalkCandidateUseCase,
     generateWalkRouteUseCase,
     aggregateTrackingSessionStatsUseCase,
+    ensureLocalPoiCoverageUseCase,
     getLastKnownUserStartPointUseCase,
     getUserStartPointUseCase,
     saveLastKnownUserStartPointUseCase,
