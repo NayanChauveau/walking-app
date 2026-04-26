@@ -10,11 +10,17 @@ export class CompleteWalkUseCase {
     private readonly traversedCells: TraversedCellsPort,
   ) {}
 
-  async execute(input: { route: WalkRoute }): Promise<CompletedWalk> {
+  async execute(input: {
+    route: WalkRoute;
+    actualPath?: WalkRoute["geometry"];
+  }): Promise<CompletedWalk> {
+    const persistedPolyline =
+      input.actualPath && input.actualPath.length > 1
+        ? input.actualPath
+        : input.route.geometry;
     const nowIso = new Date().toISOString();
-    const firstPoint = input.route.geometry[0] ?? input.route.candidate.ellipse.start;
-    const lastPoint =
-      input.route.geometry[input.route.geometry.length - 1] ?? firstPoint;
+    const firstPoint = persistedPolyline[0] ?? input.route.candidate.ellipse.start;
+    const lastPoint = persistedPolyline[persistedPolyline.length - 1] ?? firstPoint;
     // TODO: replace API-estimated duration with real elapsed duration
     // collected from the user session when they tap "Terminer le parcours".
     const averageSpeedKmh =
@@ -30,9 +36,9 @@ export class CompleteWalkUseCase {
       // and keep this API duration only as a fallback estimate.
       durationSeconds: input.route.durationSeconds,
       averageSpeedKmh,
-      polyline: input.route.geometry,
+      polyline: persistedPolyline,
       traversedH3Cells: this.traversedCells.extractFromPolyline({
-        polyline: input.route.geometry,
+        polyline: persistedPolyline,
       }),
       start: firstPoint,
       end: lastPoint,

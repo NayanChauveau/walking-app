@@ -6,6 +6,7 @@ import type { Coordinates } from "@/src/modules/walk-route";
 type MapProps = {
   userCoordinates: Coordinates | null;
   routeGeometry?: Coordinates[];
+  traversedUntilIndex?: number;
   cameraOverride?: {
     coordinates: Coordinates;
     zoom: number;
@@ -42,6 +43,7 @@ function getCameraPositionForGeometry(geometry: Coordinates[]) {
 export default function Map({
   userCoordinates,
   routeGeometry = [],
+  traversedUntilIndex = 0,
   cameraOverride = null,
 }: MapProps) {
   const mapStyle = {
@@ -89,17 +91,41 @@ export default function Map({
       : []),
   ];
 
-  const polylines =
-    routeGeometry.length > 0
+  const safeTraversedIndex = Math.max(
+    0,
+    Math.min(traversedUntilIndex, Math.max(routeGeometry.length - 1, 0)),
+  );
+  const traversedCoordinates =
+    routeGeometry.length > 1
+      ? routeGeometry.slice(0, safeTraversedIndex + 1)
+      : [];
+  const remainingCoordinates =
+    routeGeometry.length > 1
+      ? routeGeometry.slice(Math.max(safeTraversedIndex, 0))
+      : routeGeometry;
+
+  const polylines = [
+    ...(traversedCoordinates.length > 1
       ? [
           {
-            id: "generated-route",
-            coordinates: routeGeometry,
+            id: "traversed-route",
+            coordinates: traversedCoordinates,
+            color: "#8A8F98",
+            width: 10,
+          },
+        ]
+      : []),
+    ...(remainingCoordinates.length > 1
+      ? [
+          {
+            id: "remaining-route",
+            coordinates: remainingCoordinates,
             color: "#2F80ED",
             width: 10,
           },
         ]
-      : [];
+      : []),
+  ];
 
   if (Platform.OS === "ios") {
     return (

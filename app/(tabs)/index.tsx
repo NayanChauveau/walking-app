@@ -64,6 +64,8 @@ export default function HomeScreen() {
   const [isCameraFollowingGps, setIsCameraFollowingGps] = useState(false);
   const [isMapInteracting, setIsMapInteracting] = useState(false);
   const [gpsProgressPercent, setGpsProgressPercent] = useState(0);
+  const [traversedRouteIndex, setTraversedRouteIndex] = useState(0);
+  const [gpsTrackedPath, setGpsTrackedPath] = useState<Coordinates[]>([]);
   const [gpsTrackedCoordinates, setGpsTrackedCoordinates] =
     useState<Coordinates | null>(null);
   const [gpsSubscription, setGpsSubscription] =
@@ -202,7 +204,7 @@ export default function HomeScreen() {
     return 2 * earthRadiusMeters * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
   }
 
-  function computeProgressPercent(
+  function findNearestGeometryIndex(
     geometry: Coordinates[],
     current: Coordinates,
   ): number {
@@ -219,6 +221,14 @@ export default function HomeScreen() {
         nearestDistance = distance;
         nearestIndex = index;
       }
+    }
+
+    return nearestIndex;
+  }
+
+  function computeProgressPercent(geometry: Coordinates[], nearestIndex: number): number {
+    if (geometry.length <= 1) {
+      return 0;
     }
 
     const progress = (nearestIndex / (geometry.length - 1)) * 100;
@@ -240,6 +250,8 @@ export default function HomeScreen() {
       setError(null);
       setSuccessMessage(null);
       setGpsProgressPercent(0);
+      setTraversedRouteIndex(0);
+      setGpsTrackedPath([]);
       setIsGpsTracking(true);
       setIsCameraFollowingGps(true);
 
@@ -255,7 +267,15 @@ export default function HomeScreen() {
             longitude: position.coords.longitude,
           };
           setGpsTrackedCoordinates(nextCoordinates);
-          setGpsProgressPercent(computeProgressPercent(route.geometry, nextCoordinates));
+          setGpsTrackedPath((previousPath) => [...previousPath, nextCoordinates]);
+          const nearestRouteIndex = findNearestGeometryIndex(
+            route.geometry,
+            nextCoordinates,
+          );
+          setTraversedRouteIndex(nearestRouteIndex);
+          setGpsProgressPercent(
+            computeProgressPercent(route.geometry, nearestRouteIndex),
+          );
         },
       );
 
@@ -288,13 +308,21 @@ export default function HomeScreen() {
       setError(null);
       setSuccessMessage(null);
 
-      await completeWalkUseCase.execute({ route });
+      await completeWalkUseCase.execute({
+        route,
+        actualPath:
+          gpsTrackedPath.length > 1
+            ? gpsTrackedPath
+            : undefined,
+      });
       const refreshedInsights = await getWalkInsightsUseCase.execute();
       setInsights(refreshedInsights);
       setSuccessMessage("Parcours enregistre. Bravo !");
       setRoute(null);
       setGpsTrackedCoordinates(null);
+      setGpsTrackedPath([]);
       setGpsProgressPercent(0);
+      setTraversedRouteIndex(0);
       handleStopGpsTracking();
     } catch (storageError) {
       console.error(storageError);
@@ -450,6 +478,7 @@ export default function HomeScreen() {
             <Map
               userCoordinates={userCoordinates}
               routeGeometry={route?.geometry ?? []}
+              traversedUntilIndex={route ? traversedRouteIndex : 0}
               cameraOverride={
                 isGpsTracking && isCameraFollowingGps && gpsTrackedCoordinates
                   ? {
