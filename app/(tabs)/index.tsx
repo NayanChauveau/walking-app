@@ -23,10 +23,9 @@ import {
   type Coordinates,
   type WalkRoute,
 } from "@/src/modules/walk-route";
+import type { TrackingSessionStats } from "@/src/modules/walk-route/application/use-cases/AggregateTrackingSessionStatsUseCase";
 import type { RecentWalkCellsPort } from "@/src/modules/walk-route/application/ports/RecentWalkCellsPort";
-import {
-  createWalkHistoryModule,
-} from "@/src/modules/walk-history";
+import { createWalkHistoryModule } from "@/src/modules/walk-history";
 
 const {
   clearWalkHistoryUseCase,
@@ -41,6 +40,7 @@ const recentWalkCellsPort: RecentWalkCellsPort = {
 };
 
 const {
+  aggregateTrackingSessionStatsUseCase,
   generateWalkRouteUseCase,
   getLastKnownUserStartPointUseCase,
   getUserStartPointUseCase,
@@ -71,11 +71,9 @@ export default function HomeScreen() {
   const [trackingStartTimestampMs, setTrackingStartTimestampMs] = useState<number | null>(
     null,
   );
-  const [trackedDistanceMeters, setTrackedDistanceMeters] = useState(0);
-  const [currentSpeedKmh, setCurrentSpeedKmh] = useState(0);
-  const [averageTrackedSpeedKmh, setAverageTrackedSpeedKmh] = useState(0);
-  const [gpsProgressPercent, setGpsProgressPercent] = useState(0);
-  const [traversedRouteIndex, setTraversedRouteIndex] = useState(0);
+  const [trackingStats, setTrackingStats] = useState<TrackingSessionStats>(
+    aggregateTrackingSessionStatsUseCase.createInitialStats(),
+  );
   const [gpsTrackedPath, setGpsTrackedPath] = useState<Coordinates[]>([]);
   const [manualCameraPosition, setManualCameraPosition] = useState<{
     coordinates: Coordinates;
@@ -88,11 +86,6 @@ export default function HomeScreen() {
   const [isResolvingStartPoint, setIsResolvingStartPoint] = useState(true);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const lastTrackedSampleRef = useRef<{
-    coordinates: Coordinates;
-    timestampMs: number;
-  } | null>(null);
-  const trackingSpeedSamplesRef = useRef<number[]>([]);
   const mapFollowResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -196,53 +189,6 @@ export default function HomeScreen() {
     }
   }
 
-  function getDistanceMeters(left: Coordinates, right: Coordinates): number {
-    const earthRadiusMeters = 6_371_000;
-    const latitudeDiffRadians = ((right.latitude - left.latitude) * Math.PI) / 180;
-    const longitudeDiffRadians = ((right.longitude - left.longitude) * Math.PI) / 180;
-    const leftLatitudeRadians = (left.latitude * Math.PI) / 180;
-    const rightLatitudeRadians = (right.latitude * Math.PI) / 180;
-
-    const haversine =
-      Math.sin(latitudeDiffRadians / 2) ** 2 +
-      Math.cos(leftLatitudeRadians) *
-        Math.cos(rightLatitudeRadians) *
-        Math.sin(longitudeDiffRadians / 2) ** 2;
-
-    return 2 * earthRadiusMeters * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
-  }
-
-  function findNearestGeometryIndex(
-    geometry: Coordinates[],
-    current: Coordinates,
-  ): number {
-    if (geometry.length <= 1) {
-      return 0;
-    }
-
-    let nearestIndex = 0;
-    let nearestDistance = Number.POSITIVE_INFINITY;
-
-    for (let index = 0; index < geometry.length; index += 1) {
-      const distance = getDistanceMeters(geometry[index], current);
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestIndex = index;
-      }
-    }
-
-    return nearestIndex;
-  }
-
-  function computeProgressPercent(geometry: Coordinates[], nearestIndex: number): number {
-    if (geometry.length <= 1) {
-      return 0;
-    }
-
-    const progress = (nearestIndex / (geometry.length - 1)) * 100;
-    return Math.max(0, Math.min(100, progress));
-  }
-
   function getTrackedDurationSeconds(): number {
     if (!trackingStartTimestampMs) {
       return 0;
@@ -269,15 +215,9 @@ export default function HomeScreen() {
 
       setError(null);
       setSuccessMessage(null);
-      setGpsProgressPercent(0);
-      setTraversedRouteIndex(0);
       setGpsTrackedPath([]);
-      setTrackedDistanceMeters(0);
-      setCurrentSpeedKmh(0);
-      setAverageTrackedSpeedKmh(0);
+      setTrackingStats(aggregateTrackingSessionStatsUseCase.createInitialStats());
       setTrackingStartTimestampMs(Date.now());
-      lastTrackedSampleRef.current = null;
-      trackingSpeedSamplesRef.current = [];
       setManualCameraPosition(null);
       setIsGpsTracking(true);
       setIsCameraFollowingGps(true);
@@ -297,43 +237,15 @@ export default function HomeScreen() {
           };
           setGpsTrackedCoordinates(nextCoordinates);
           setGpsTrackedPath((previousPath) => [...previousPath, nextCoordinates]);
-
-          const previousSample = lastTrackedSampleRef.current;
-          if (previousSample) {
-            const segmentDistanceMeters = getDistanceMeters(
-              previousSample.coordinates,
-              nextCoordinates,
-            );
-            const elapsedSeconds = Math.max(
-              0.001,
-              (sampleTimestampMs - previousSample.timestampMs) / 1000,
-            );
-            const instantSpeedKmh = (segmentDistanceMeters / elapsedSeconds) * 3.6;
-            const boundedInstantSpeedKmh = Math.min(25, Math.max(0, instantSpeedKmh));
-
-            setTrackedDistanceMeters((previousDistance) => {
-              const nextDistance = previousDistance + segmentDistanceMeters;
-              return nextDistance;
-            });
-            setCurrentSpeedKmh(boundedInstantSpeedKmh);
-            trackingSpeedSamplesRef.current.push(boundedInstantSpeedKmh);
-            const samples = trackingSpeedSamplesRef.current;
-            const averageSpeed =
-              samples.reduce((sum, value) => sum + value, 0) / samples.length;
-            setAverageTrackedSpeedKmh(averageSpeed);
-          }
-
-          lastTrackedSampleRef.current = {
-            coordinates: nextCoordinates,
-            timestampMs: sampleTimestampMs,
-          };
-          const nearestRouteIndex = findNearestGeometryIndex(
-            route.geometry,
-            nextCoordinates,
-          );
-          setTraversedRouteIndex(nearestRouteIndex);
-          setGpsProgressPercent(
-            computeProgressPercent(route.geometry, nearestRouteIndex),
+          setTrackingStats((previousStats) =>
+            aggregateTrackingSessionStatsUseCase.execute({
+              routeGeometry: route.geometry,
+              currentSample: {
+                coordinates: nextCoordinates,
+                timestampMs: sampleTimestampMs,
+              },
+              previousStats,
+            }),
           );
         },
       );
@@ -360,14 +272,8 @@ export default function HomeScreen() {
   function resetTrackingState() {
     setGpsTrackedCoordinates(null);
     setGpsTrackedPath([]);
-    setGpsProgressPercent(0);
-    setTraversedRouteIndex(0);
-    setTrackedDistanceMeters(0);
-    setCurrentSpeedKmh(0);
-    setAverageTrackedSpeedKmh(0);
+    setTrackingStats(aggregateTrackingSessionStatsUseCase.createInitialStats());
     setTrackingStartTimestampMs(null);
-    lastTrackedSampleRef.current = null;
-    trackingSpeedSamplesRef.current = [];
     setManualCameraPosition(null);
   }
 
@@ -397,8 +303,8 @@ export default function HomeScreen() {
         route,
         actualPath: gpsTrackedPath.length > 1 ? gpsTrackedPath : undefined,
         actualDurationSeconds: trackedDurationSeconds,
-        actualDistanceMeters: trackedDistanceMeters,
-        averageSpeedKmh: averageTrackedSpeedKmh,
+        actualDistanceMeters: trackingStats.trackedDistanceMeters,
+        averageSpeedKmh: trackingStats.averageSpeedKmh,
       });
       setSuccessMessage("Parcours enregistre. Bravo !");
       setRoute(null);
@@ -500,7 +406,7 @@ export default function HomeScreen() {
   }
 
   const trackedDurationSeconds = getTrackedDurationSeconds();
-  const trackedDistanceKm = trackedDistanceMeters / 1000;
+  const trackedDistanceKm = trackingStats.trackedDistanceMeters / 1000;
   const estimatedCalories = estimateCaloriesBurned(trackedDurationSeconds);
 
   return (
@@ -536,14 +442,14 @@ export default function HomeScreen() {
         {isGpsTracking ? (
           <Text style={{ color: theme.text }}>
             Suivi GPS actif - progression sur la polyline choisie:{" "}
-            {Math.round(gpsProgressPercent)}%
+            {Math.round(trackingStats.progressPercent)}%
           </Text>
         ) : null}
         {isGpsTracking ? (
           <Text style={{ color: theme.text }}>
             Distance: {trackedDistanceKm.toFixed(2)} km · Temps:{" "}
             {Math.round(trackedDurationSeconds / 60)} min · Vitesse:{" "}
-            {currentSpeedKmh.toFixed(1)} km/h
+            {trackingStats.currentSpeedKmh.toFixed(1)} km/h
           </Text>
         ) : null}
         {isGpsTracking && !isCameraFollowingGps ? (
@@ -611,7 +517,7 @@ export default function HomeScreen() {
             <Map
               userCoordinates={userCoordinates}
               routeGeometry={route?.geometry ?? []}
-              traversedUntilIndex={route ? traversedRouteIndex : 0}
+              traversedUntilIndex={route ? trackingStats.traversedRouteIndex : 0}
               cameraOverride={
                 isGpsTracking && isCameraFollowingGps && gpsTrackedCoordinates
                   ? {
@@ -649,7 +555,7 @@ export default function HomeScreen() {
               Temps total: {Math.round(trackedDurationSeconds / 60)} min
             </ThemedText>
             <ThemedText>
-              Vitesse moyenne: {averageTrackedSpeedKmh.toFixed(1)} km/h
+              Vitesse moyenne: {trackingStats.averageSpeedKmh.toFixed(1)} km/h
             </ThemedText>
             <ThemedText>
               Calories estimees: {Math.round(estimatedCalories)} kcal
