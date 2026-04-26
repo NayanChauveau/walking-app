@@ -52,6 +52,8 @@ export class GenerateWalkRouteUseCase {
     let rejectedCandidates = 0;
     let bestRejectedRoute: WalkRoute | null = null;
     let bestRejectedScore = Number.NEGATIVE_INFINITY;
+    let bestRouteScoreDetails: RouteScoreDetails | null = null;
+    let bestRejectedScoreDetails: RouteScoreDetails | null = null;
 
     const generatedCandidates = this.generateWaypointCandidates.execute({
       start: input.start,
@@ -131,6 +133,7 @@ export class GenerateWalkRouteUseCase {
             if (scoreDetails.totalScore > bestRejectedScore) {
               bestRejectedScore = scoreDetails.totalScore;
               bestRejectedRoute = route;
+              bestRejectedScoreDetails = scoreDetails;
             }
             continue;
           }
@@ -138,6 +141,7 @@ export class GenerateWalkRouteUseCase {
           if (scoreDetails.totalScore > bestScore) {
             bestScore = scoreDetails.totalScore;
             bestRoute = route;
+            bestRouteScoreDetails = scoreDetails;
             console.log("[walk-route] candidate is new best", {
               ellipseIndex: routingCandidate.ellipseIndex,
               phaseOffset: routingCandidate.phaseOffset,
@@ -160,27 +164,59 @@ export class GenerateWalkRouteUseCase {
 
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
-    if (!bestRoute) {
-      if (bestRejectedRoute) {
-        console.warn(
-          "[walk-route] all candidates rejected by loop-quality filter, using best rejected route",
-          { rejectedCandidates, testedCandidates },
-        );
-        bestRoute = bestRejectedRoute;
-        bestScore = bestRejectedScore;
-      } else {
-        throw new Error("No walk route candidate could be generated");
-      }
+    let selectedResult: {
+      route: WalkRoute;
+      score: number;
+      scoreDetails: RouteScoreDetails | null;
+    };
+
+    if (bestRoute) {
+      selectedResult = {
+        route: bestRoute,
+        score: bestScore,
+        scoreDetails: bestRouteScoreDetails,
+      };
+    } else if (bestRejectedRoute) {
+      console.warn(
+        "[walk-route] all candidates rejected by loop-quality filter, using best rejected route",
+        { rejectedCandidates, testedCandidates },
+      );
+      selectedResult = {
+        route: bestRejectedRoute,
+        score: bestRejectedScore,
+        scoreDetails: bestRejectedScoreDetails,
+      };
+    } else {
+      throw new Error("No walk route candidate could be generated");
     }
 
-    const selectedRoute: WalkRoute = bestRoute;
+    const selectedRoute: WalkRoute = {
+      ...selectedResult.route,
+      scoring: selectedResult.scoreDetails
+        ? {
+            totalScore: selectedResult.scoreDetails.totalScore,
+            noveltyScore: selectedResult.scoreDetails.noveltyScore,
+            loopQualityScore: selectedResult.scoreDetails.loopQualityScore,
+            targetDistanceScore: selectedResult.scoreDetails.targetDistanceScore,
+            targetDurationScore: selectedResult.scoreDetails.targetDurationScore,
+            backtrackRatio: selectedResult.scoreDetails.backtrackRatio,
+            revisitRatio: selectedResult.scoreDetails.revisitRatio,
+            repeatedEdgeRatio: selectedResult.scoreDetails.repeatedEdgeRatio,
+            isRejected: selectedResult.scoreDetails.isRejected,
+            rejectionReason: selectedResult.scoreDetails.rejectionReason,
+          }
+        : undefined,
+    };
 
     console.log("[walk-route] selected route", {
       testedCandidates,
       rejectedCandidates,
       selectedDistanceKm: Number((selectedRoute.distanceMeters / 1000).toFixed(2)),
       selectedDurationMin: Math.round(selectedRoute.durationSeconds / 60),
-      finalRouteScore: Number(bestScore.toFixed(4)),
+      finalRouteScore: Number(selectedResult.score.toFixed(4)),
+      selectedLoopQualityScore: Number(
+        (selectedRoute.scoring?.loopQualityScore ?? 0).toFixed(4),
+      ),
     });
 
     return selectedRoute;

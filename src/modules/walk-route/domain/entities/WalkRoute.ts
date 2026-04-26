@@ -6,4 +6,16 @@ export type WalkRoute = {
   geometry: Coordinates[];
   distanceMeters: number;
   durationSeconds: number;
+  scoring?: {
+    totalScore: number;
+    noveltyScore: number;
+    loopQualityScore: number;
+    targetDistanceScore: number;
+    targetDurationScore: number;
+    backtrackRatio: number;
+    revisitRatio: number;
+    repeatedEdgeRatio: number;
+    isRejected: boolean;
+    rejectionReason: string | null;
+  };
 };

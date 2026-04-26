@@ -238,10 +238,19 @@ export default function HomeScreen() {
         ) : null}
 
         {route ? (
-          <Text style={{ color: theme.text }}>
-            Distance : {(route.distanceMeters / 1000).toFixed(1)} km · Durée :{" "}
-            {Math.round(route.durationSeconds / 60)} min
-          </Text>
+          <>
+            <Text style={{ color: theme.text }}>
+              Distance : {(route.distanceMeters / 1000).toFixed(1)} km · Durée :{" "}
+              {Math.round(route.durationSeconds / 60)} min
+            </Text>
+            {route.scoring ? (
+              <Text style={{ color: theme.text }}>
+                Score global : {route.scoring.totalScore.toFixed(3)} · Loop:{" "}
+                {route.scoring.loopQualityScore.toFixed(3)} · Novelty:{" "}
+                {route.scoring.noveltyScore.toFixed(3)}
+              </Text>
+            ) : null}
+          </>
         ) : null}
 
         {!userCoordinates ? (
