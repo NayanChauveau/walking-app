@@ -468,7 +468,8 @@ export default function HomeScreen() {
               <Text style={{ color: theme.text }}>
                 Score global : {route.scoring.totalScore.toFixed(3)} · Loop:{" "}
                 {route.scoring.loopQualityScore.toFixed(3)} · Novelty:{" "}
-                {route.scoring.noveltyScore.toFixed(3)}
+                {route.scoring.noveltyScore.toFixed(3)} · POI:{" "}
+                {route.scoring.poiPleasureScore.toFixed(3)}
               </Text>
             ) : null}
           </>

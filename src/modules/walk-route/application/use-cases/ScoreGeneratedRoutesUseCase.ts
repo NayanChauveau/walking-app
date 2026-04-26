@@ -1,10 +1,12 @@
 import type { WalkRoute } from "../../domain/entities/WalkRoute";
+import type { PoiScoringPort } from "../ports/PoiScoringPort";
 
 type CriterionKey =
   | "novelty"
   | "loopQuality"
   | "targetDistance"
-  | "targetDuration";
+  | "targetDuration"
+  | "poiPleasure";
 
 type CriterionWeight = {
   key: CriterionKey;
@@ -17,6 +19,9 @@ export type RouteScoreDetails = {
   loopQualityScore: number;
   targetDistanceScore: number;
   targetDurationScore: number;
+  poiPleasureScore: number;
+  parkProximityScore: number;
+  waterProximityScore: number;
   isRejected: boolean;
   rejectionReason: string | null;
   backtrackRatio: number;
@@ -39,11 +44,13 @@ export class ScoreGeneratedRoutesUseCase {
   private static readonly MAX_ALLOWED_REPEATED_EDGE_RATIO = 0.34;
 
   constructor(
+    private readonly poiScoring: PoiScoringPort,
     private readonly criterionWeights: CriterionWeight[] = [
-      { key: "loopQuality", weight: 0.45 },
-      { key: "novelty", weight: 0.35 },
-      { key: "targetDistance", weight: 0.15 },
+      { key: "loopQuality", weight: 0.4 },
+      { key: "novelty", weight: 0.3 },
+      { key: "targetDistance", weight: 0.1 },
       { key: "targetDuration", weight: 0.05 },
+      { key: "poiPleasure", weight: 0.15 },
     ],
   ) {}
 
@@ -70,6 +77,9 @@ export class ScoreGeneratedRoutesUseCase {
       actualDurationSeconds: input.route.durationSeconds,
       targetDurationMinutes: input.targetDurationMinutes,
     });
+    const poiScores = this.poiScoring.scoreRouteContext({
+      polyline: input.route.geometry,
+    });
 
     const isRejected =
       backtrackRatio > ScoreGeneratedRoutesUseCase.MAX_ALLOWED_BACKTRACK_RATIO ||
@@ -91,6 +101,7 @@ export class ScoreGeneratedRoutesUseCase {
       loopQuality: loopQualityScore,
       targetDistance: targetDistanceScore,
       targetDuration: targetDurationScore,
+      poiPleasure: poiScores.poiPleasureScore,
     };
     const totalScore = this.criterionWeights.reduce(
       (sum, criterion) => sum + criterionScores[criterion.key] * criterion.weight,
@@ -103,6 +114,9 @@ export class ScoreGeneratedRoutesUseCase {
       loopQualityScore,
       targetDistanceScore,
       targetDurationScore,
+      poiPleasureScore: poiScores.poiPleasureScore,
+      parkProximityScore: poiScores.parkProximityScore,
+      waterProximityScore: poiScores.waterProximityScore,
       isRejected,
       rejectionReason,
       backtrackRatio,

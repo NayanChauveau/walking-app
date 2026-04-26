@@ -15,6 +15,7 @@ import { H3PolylineCellsAdapter } from "./h3/H3PolylineCellsAdapter";
 import { H3WaypointCandidateScoringAdapter } from "./h3/H3WaypointCandidateScoringAdapter";
 import { ExpoUserStartPointAdapter } from "./location/ExpoUserStartPointAdapter";
 import { FileSystemUserStartPointCacheAdapter } from "./location/FileSystemUserStartPointCacheAdapter";
+import { LocalHeuristicPoiScoringAdapter } from "./poi/LocalHeuristicPoiScoringAdapter";
 import { MathRandomAdapter } from "./random/MathRandomAdapter";
 import { MapboxDirectionsAdapter } from "./routing/MapboxDirectionsAdapter";
 
@@ -33,6 +34,7 @@ export function createWalkRouteModule({
   const waypointGeneration = new DomainWaypointGenerationAdapter();
   const polylineCells = new H3PolylineCellsAdapter();
   const h3Scoring = new H3WaypointCandidateScoringAdapter();
+  const poiScoring = new LocalHeuristicPoiScoringAdapter();
   const userStartPoint = new ExpoUserStartPointAdapter();
   const userStartPointCache = new FileSystemUserStartPointCacheAdapter();
 
@@ -40,7 +42,7 @@ export function createWalkRouteModule({
     routing,
     new GenerateWaypointCandidatesUseCase(ellipseGeneration, waypointGeneration),
     new PreScoreWaypointCandidatesUseCase(h3Scoring),
-    new ScoreGeneratedRoutesUseCase(),
+    new ScoreGeneratedRoutesUseCase(poiScoring),
     recentWalkCells,
     polylineCells,
   );

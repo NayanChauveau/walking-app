@@ -12,6 +12,9 @@ export type WalkRoute = {
     loopQualityScore: number;
     targetDistanceScore: number;
     targetDurationScore: number;
+    poiPleasureScore: number;
+    parkProximityScore: number;
+    waterProximityScore: number;
     backtrackRatio: number;
     revisitRatio: number;
     repeatedEdgeRatio: number;
