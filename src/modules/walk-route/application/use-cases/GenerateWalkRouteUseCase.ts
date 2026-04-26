@@ -25,6 +25,8 @@ export class GenerateWalkRouteUseCase {
   private static readonly MAX_CONCURRENT_ROUTING_REQUESTS = 3;
   private static readonly SHORTLIST_TARGET = 5;
   private static readonly SHORTLIST_MIN = 3;
+  private static readonly MIN_LOOP_QUALITY_SCORE = 0.85;
+  private static readonly MAX_GENERATION_ATTEMPTS = 3;
 
   constructor(
     private readonly routing: RoutingPort,
@@ -46,180 +48,217 @@ export class GenerateWalkRouteUseCase {
       seenCellsCount: seenCells.size,
     });
 
-    let bestRoute: WalkRoute | null = null;
-    let bestScore = Number.NEGATIVE_INFINITY;
-    let testedCandidates = 0;
-    let rejectedCandidates = 0;
-    let bestRejectedRoute: WalkRoute | null = null;
-    let bestRejectedScore = Number.NEGATIVE_INFINITY;
-    let bestRouteScoreDetails: RouteScoreDetails | null = null;
-    let bestRejectedScoreDetails: RouteScoreDetails | null = null;
+    let fallbackBestRoute: WalkRoute | null = null;
+    let fallbackBestRouteScore = Number.NEGATIVE_INFINITY;
+    let fallbackBestRouteDetails: RouteScoreDetails | null = null;
+    let fallbackBestRejectedRoute: WalkRoute | null = null;
+    let fallbackBestRejectedScore = Number.NEGATIVE_INFINITY;
+    let fallbackBestRejectedDetails: RouteScoreDetails | null = null;
 
-    const generatedCandidates = this.generateWaypointCandidates.execute({
-      start: input.start,
-      targetDurationMinutes: input.targetDurationMinutes,
-      minCandidates: 20,
-      maxCandidates: 50,
-    });
-    const preScoredCandidates = this.preScoreWaypointCandidates.execute({
-      candidates: generatedCandidates,
-      seenCells,
-    });
-    const routingCandidates = this.selectTopCandidates(preScoredCandidates);
+    for (
+      let attempt = 1;
+      attempt <= GenerateWalkRouteUseCase.MAX_GENERATION_ATTEMPTS;
+      attempt += 1
+    ) {
+      let bestRoute: WalkRoute | null = null;
+      let bestScore = Number.NEGATIVE_INFINITY;
+      let testedCandidates = 0;
+      let rejectedCandidates = 0;
+      let bestRejectedRoute: WalkRoute | null = null;
+      let bestRejectedScore = Number.NEGATIVE_INFINITY;
+      let bestRouteScoreDetails: RouteScoreDetails | null = null;
+      let bestRejectedScoreDetails: RouteScoreDetails | null = null;
 
-    console.log("[walk-route] generated waypoint candidates", {
-      generatedCandidates: generatedCandidates.length,
-      shortlistedCandidates: routingCandidates.length,
-      shortlistTopScore: Number((routingCandidates[0]?.preScore ?? 0).toFixed(4)),
-    });
+      const generatedCandidates = this.generateWaypointCandidates.execute({
+        start: input.start,
+        targetDurationMinutes: input.targetDurationMinutes,
+        minCandidates: 20,
+        maxCandidates: 50,
+      });
+      const preScoredCandidates = this.preScoreWaypointCandidates.execute({
+        candidates: generatedCandidates,
+        seenCells,
+      });
+      const routingCandidates = this.selectTopCandidates(preScoredCandidates);
 
-    let nextCandidateIndex = 0;
-    const workerCount = Math.min(
-      GenerateWalkRouteUseCase.MAX_CONCURRENT_ROUTING_REQUESTS,
-      routingCandidates.length,
-    );
+      console.log("[walk-route] generated waypoint candidates", {
+        attempt,
+        generatedCandidates: generatedCandidates.length,
+        shortlistedCandidates: routingCandidates.length,
+        shortlistTopScore: Number((routingCandidates[0]?.preScore ?? 0).toFixed(4)),
+      });
 
-    const worker = async () => {
-      while (true) {
-        const candidateIndex = nextCandidateIndex;
-        nextCandidateIndex += 1;
+      let nextCandidateIndex = 0;
+      const workerCount = Math.min(
+        GenerateWalkRouteUseCase.MAX_CONCURRENT_ROUTING_REQUESTS,
+        routingCandidates.length,
+      );
 
-        const routingCandidate: PreScoredWaypointCandidate | undefined =
-          routingCandidates[candidateIndex];
-        if (!routingCandidate) {
-          return;
-        }
+      const worker = async () => {
+        while (true) {
+          const candidateIndex = nextCandidateIndex;
+          nextCandidateIndex += 1;
 
-        try {
-          const route = await this.routing.getWalkingRoute({
-            candidate: routingCandidate.candidate,
-            waypoints: routingCandidate.waypoints,
-          });
-          testedCandidates += 1;
-
-          const traversedCells = this.polylineCells.extractFromPolyline({
-            polyline: route.geometry,
-          });
-          const traversedCellPath = this.polylineCells.extractPathFromPolyline({
-            polyline: route.geometry,
-          });
-          const scoreDetails: RouteScoreDetails = this.scoreGeneratedRoutes.execute({
-            route,
-            traversedCells,
-            traversedCellPath,
-            seenCells,
-            targetDistanceMeters,
-            targetDurationMinutes: input.targetDurationMinutes,
-          });
-          console.log("[walk-route] candidate evaluated", {
-            ellipseIndex: routingCandidate.ellipseIndex,
-            phaseOffset: routingCandidate.phaseOffset,
-            preScore: Number(routingCandidate.preScore.toFixed(4)),
-            distanceKm: Number((route.distanceMeters / 1000).toFixed(2)),
-            durationMin: Math.round(route.durationSeconds / 60),
-            traversedCells: traversedCells.length,
-            noveltyScore: Number(scoreDetails.noveltyScore.toFixed(4)),
-            loopQualityScore: Number(scoreDetails.loopQualityScore.toFixed(4)),
-            backtrackRatio: Number(scoreDetails.backtrackRatio.toFixed(4)),
-            revisitRatio: Number(scoreDetails.revisitRatio.toFixed(4)),
-            repeatedEdgeRatio: Number(scoreDetails.repeatedEdgeRatio.toFixed(4)),
-            totalScore: Number(scoreDetails.totalScore.toFixed(4)),
-            isRejected: scoreDetails.isRejected,
-            rejectionReason: scoreDetails.rejectionReason,
-          });
-
-          if (scoreDetails.isRejected) {
-            rejectedCandidates += 1;
-            if (scoreDetails.totalScore > bestRejectedScore) {
-              bestRejectedScore = scoreDetails.totalScore;
-              bestRejectedRoute = route;
-              bestRejectedScoreDetails = scoreDetails;
-            }
-            continue;
+          const routingCandidate: PreScoredWaypointCandidate | undefined =
+            routingCandidates[candidateIndex];
+          if (!routingCandidate) {
+            return;
           }
 
-          if (scoreDetails.totalScore > bestScore) {
-            bestScore = scoreDetails.totalScore;
-            bestRoute = route;
-            bestRouteScoreDetails = scoreDetails;
-            console.log("[walk-route] candidate is new best", {
-              ellipseIndex: routingCandidate.ellipseIndex,
-              phaseOffset: routingCandidate.phaseOffset,
-              bestScore: Number(bestScore.toFixed(4)),
+          try {
+            const route = await this.routing.getWalkingRoute({
+              candidate: routingCandidate.candidate,
+              waypoints: routingCandidate.waypoints,
             });
-          }
-        } catch (routingError) {
-          console.warn(
-            "[walk-route] Candidate routing failed, trying next one",
-            {
+            testedCandidates += 1;
+
+            const traversedCells = this.polylineCells.extractFromPolyline({
+              polyline: route.geometry,
+            });
+            const traversedCellPath = this.polylineCells.extractPathFromPolyline({
+              polyline: route.geometry,
+            });
+            const scoreDetails: RouteScoreDetails = this.scoreGeneratedRoutes.execute({
+              route,
+              traversedCells,
+              traversedCellPath,
+              seenCells,
+              targetDistanceMeters,
+              targetDurationMinutes: input.targetDurationMinutes,
+            });
+            console.log("[walk-route] candidate evaluated", {
+              attempt,
               ellipseIndex: routingCandidate.ellipseIndex,
               phaseOffset: routingCandidate.phaseOffset,
               preScore: Number(routingCandidate.preScore.toFixed(4)),
-              routingError,
-            },
+              distanceKm: Number((route.distanceMeters / 1000).toFixed(2)),
+              durationMin: Math.round(route.durationSeconds / 60),
+              traversedCells: traversedCells.length,
+              noveltyScore: Number(scoreDetails.noveltyScore.toFixed(4)),
+              loopQualityScore: Number(scoreDetails.loopQualityScore.toFixed(4)),
+              backtrackRatio: Number(scoreDetails.backtrackRatio.toFixed(4)),
+              revisitRatio: Number(scoreDetails.revisitRatio.toFixed(4)),
+              repeatedEdgeRatio: Number(scoreDetails.repeatedEdgeRatio.toFixed(4)),
+              totalScore: Number(scoreDetails.totalScore.toFixed(4)),
+              isRejected: scoreDetails.isRejected,
+              rejectionReason: scoreDetails.rejectionReason,
+            });
+
+            if (scoreDetails.isRejected) {
+              rejectedCandidates += 1;
+              if (scoreDetails.totalScore > bestRejectedScore) {
+                bestRejectedScore = scoreDetails.totalScore;
+                bestRejectedRoute = route;
+                bestRejectedScoreDetails = scoreDetails;
+              }
+              continue;
+            }
+
+            if (scoreDetails.totalScore > bestScore) {
+              bestScore = scoreDetails.totalScore;
+              bestRoute = route;
+              bestRouteScoreDetails = scoreDetails;
+              console.log("[walk-route] candidate is new best", {
+                attempt,
+                ellipseIndex: routingCandidate.ellipseIndex,
+                phaseOffset: routingCandidate.phaseOffset,
+                bestScore: Number(bestScore.toFixed(4)),
+                loopQualityScore: Number(scoreDetails.loopQualityScore.toFixed(4)),
+              });
+            }
+          } catch (routingError) {
+            console.warn(
+              "[walk-route] Candidate routing failed, trying next one",
+              {
+                attempt,
+                ellipseIndex: routingCandidate.ellipseIndex,
+                phaseOffset: routingCandidate.phaseOffset,
+                preScore: Number(routingCandidate.preScore.toFixed(4)),
+                routingError,
+              },
+            );
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+      const bestLoopQualityScore =
+        (bestRouteScoreDetails as RouteScoreDetails | null)?.loopQualityScore ?? 0;
+
+      if (bestRoute && bestRouteScoreDetails) {
+        if (bestScore > fallbackBestRouteScore) {
+          fallbackBestRoute = bestRoute;
+          fallbackBestRouteScore = bestScore;
+          fallbackBestRouteDetails = bestRouteScoreDetails;
+        }
+
+        if (bestLoopQualityScore >= GenerateWalkRouteUseCase.MIN_LOOP_QUALITY_SCORE) {
+          const selectedRoute = this.buildSelectedRoute(
+            bestRoute,
+            bestRouteScoreDetails,
           );
+          console.log("[walk-route] selected route", {
+            attempt,
+            testedCandidates,
+            rejectedCandidates,
+            selectedDistanceKm: Number((selectedRoute.distanceMeters / 1000).toFixed(2)),
+            selectedDurationMin: Math.round(selectedRoute.durationSeconds / 60),
+            finalRouteScore: Number(bestScore.toFixed(4)),
+            selectedLoopQualityScore: Number(
+              (selectedRoute.scoring?.loopQualityScore ?? 0).toFixed(4),
+            ),
+          });
+          return selectedRoute;
         }
       }
-    };
 
-    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+      if (bestRejectedRoute && bestRejectedScore > fallbackBestRejectedScore) {
+        fallbackBestRejectedRoute = bestRejectedRoute;
+        fallbackBestRejectedScore = bestRejectedScore;
+        fallbackBestRejectedDetails = bestRejectedScoreDetails;
+      }
 
-    let selectedResult: {
-      route: WalkRoute;
-      score: number;
-      scoreDetails: RouteScoreDetails | null;
-    };
-
-    if (bestRoute) {
-      selectedResult = {
-        route: bestRoute,
-        score: bestScore,
-        scoreDetails: bestRouteScoreDetails,
-      };
-    } else if (bestRejectedRoute) {
       console.warn(
-        "[walk-route] all candidates rejected by loop-quality filter, using best rejected route",
-        { rejectedCandidates, testedCandidates },
+        "[walk-route] best loop quality below threshold, regenerating candidates",
+        {
+          attempt,
+          maxAttempts: GenerateWalkRouteUseCase.MAX_GENERATION_ATTEMPTS,
+          requiredLoopQuality: GenerateWalkRouteUseCase.MIN_LOOP_QUALITY_SCORE,
+          bestLoopQualityScore: Number(bestLoopQualityScore.toFixed(4)),
+        },
       );
-      selectedResult = {
-        route: bestRejectedRoute,
-        score: bestRejectedScore,
-        scoreDetails: bestRejectedScoreDetails,
-      };
-    } else {
-      throw new Error("No walk route candidate could be generated");
     }
 
-    const selectedRoute: WalkRoute = {
-      ...selectedResult.route,
-      scoring: selectedResult.scoreDetails
-        ? {
-            totalScore: selectedResult.scoreDetails.totalScore,
-            noveltyScore: selectedResult.scoreDetails.noveltyScore,
-            loopQualityScore: selectedResult.scoreDetails.loopQualityScore,
-            targetDistanceScore: selectedResult.scoreDetails.targetDistanceScore,
-            targetDurationScore: selectedResult.scoreDetails.targetDurationScore,
-            backtrackRatio: selectedResult.scoreDetails.backtrackRatio,
-            revisitRatio: selectedResult.scoreDetails.revisitRatio,
-            repeatedEdgeRatio: selectedResult.scoreDetails.repeatedEdgeRatio,
-            isRejected: selectedResult.scoreDetails.isRejected,
-            rejectionReason: selectedResult.scoreDetails.rejectionReason,
-          }
-        : undefined,
-    };
+    const fallbackLoopQualityScore =
+      (fallbackBestRouteDetails as RouteScoreDetails | null)?.loopQualityScore ?? 0;
 
-    console.log("[walk-route] selected route", {
-      testedCandidates,
-      rejectedCandidates,
-      selectedDistanceKm: Number((selectedRoute.distanceMeters / 1000).toFixed(2)),
-      selectedDurationMin: Math.round(selectedRoute.durationSeconds / 60),
-      finalRouteScore: Number(selectedResult.score.toFixed(4)),
-      selectedLoopQualityScore: Number(
-        (selectedRoute.scoring?.loopQualityScore ?? 0).toFixed(4),
-      ),
-    });
+    if (fallbackBestRoute) {
+      console.warn(
+        "[walk-route] loop quality threshold not reached after max attempts, using best available route",
+        {
+          requiredLoopQuality: GenerateWalkRouteUseCase.MIN_LOOP_QUALITY_SCORE,
+          maxAttempts: GenerateWalkRouteUseCase.MAX_GENERATION_ATTEMPTS,
+          selectedLoopQualityScore: Number(fallbackLoopQualityScore.toFixed(4)),
+        },
+      );
+      return this.buildSelectedRoute(fallbackBestRoute, fallbackBestRouteDetails);
+    }
 
-    return selectedRoute;
+    if (fallbackBestRejectedRoute) {
+      console.warn(
+        "[walk-route] all candidates rejected across attempts, using best rejected route",
+        {
+          maxAttempts: GenerateWalkRouteUseCase.MAX_GENERATION_ATTEMPTS,
+        },
+      );
+      return this.buildSelectedRoute(
+        fallbackBestRejectedRoute,
+        fallbackBestRejectedDetails,
+      );
+    }
+
+    throw new Error("No walk route candidate could be generated");
   }
 
   private selectTopCandidates(
@@ -236,5 +275,28 @@ export class GenerateWalkRouteUseCase {
     }
 
     return topCandidates;
+  }
+
+  private buildSelectedRoute(
+    route: WalkRoute,
+    scoreDetails: RouteScoreDetails | null,
+  ): WalkRoute {
+    return {
+      ...route,
+      scoring: scoreDetails
+        ? {
+            totalScore: scoreDetails.totalScore,
+            noveltyScore: scoreDetails.noveltyScore,
+            loopQualityScore: scoreDetails.loopQualityScore,
+            targetDistanceScore: scoreDetails.targetDistanceScore,
+            targetDurationScore: scoreDetails.targetDurationScore,
+            backtrackRatio: scoreDetails.backtrackRatio,
+            revisitRatio: scoreDetails.revisitRatio,
+            repeatedEdgeRatio: scoreDetails.repeatedEdgeRatio,
+            isRejected: scoreDetails.isRejected,
+            rejectionReason: scoreDetails.rejectionReason,
+          }
+        : undefined,
+    };
   }
 }
