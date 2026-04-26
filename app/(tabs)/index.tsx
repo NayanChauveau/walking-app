@@ -26,14 +26,12 @@ import {
 import type { RecentWalkCellsPort } from "@/src/modules/walk-route/application/ports/RecentWalkCellsPort";
 import {
   createWalkHistoryModule,
-  type WalkInsights,
 } from "@/src/modules/walk-history";
 
 const {
   clearWalkHistoryUseCase,
   completeWalkUseCase,
   getRecentWalkCellsUseCase,
-  getWalkInsightsUseCase,
 } = createWalkHistoryModule();
 
 const recentWalkCellsPort: RecentWalkCellsPort = {
@@ -64,17 +62,8 @@ export default function HomeScreen() {
   );
 
   const [route, setRoute] = useState<WalkRoute | null>(null);
-  const [insights, setInsights] = useState<WalkInsights>({
-    totalWalks: 0,
-    totalDistanceKm: 0,
-    totalDurationMinutes: 0,
-    averageDistanceKm: 0,
-    averageDurationMinutes: 0,
-    averageSpeedKmh: 0,
-    lastWalkAtIso: null,
-  });
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isSavingWalk, setIsSavingWalk] = useState(false);
+  const [, setIsSavingWalk] = useState(false);
   const [isGpsTracking, setIsGpsTracking] = useState(false);
   const [isCameraFollowingGps, setIsCameraFollowingGps] = useState(false);
   const [isMapInteracting, setIsMapInteracting] = useState(false);
@@ -181,19 +170,6 @@ export default function HomeScreen() {
     loadLastKnownUserLocation();
     loadUserLocation();
   }, [resolveUserStartPoint]);
-
-  useEffect(() => {
-    async function loadHistoryInsights() {
-      try {
-        const loadedInsights = await getWalkInsightsUseCase.execute();
-        setInsights(loadedInsights);
-      } catch (storageError) {
-        console.error(storageError);
-      }
-    }
-
-    loadHistoryInsights();
-  }, []);
 
   async function handleGenerateRoute() {
     if (!userCoordinates) {
@@ -424,8 +400,6 @@ export default function HomeScreen() {
         actualDistanceMeters: trackedDistanceMeters,
         averageSpeedKmh: averageTrackedSpeedKmh,
       });
-      const refreshedInsights = await getWalkInsightsUseCase.execute();
-      setInsights(refreshedInsights);
       setSuccessMessage("Parcours enregistre. Bravo !");
       setRoute(null);
       resetTrackingState();
@@ -446,44 +420,11 @@ export default function HomeScreen() {
     setIsStopTrackingModalVisible(false);
   }
 
-  async function handleConfirmWalkCompletion() {
-    if (!route) {
-      return;
-    }
-
-    try {
-      setIsSavingWalk(true);
-      setError(null);
-      setSuccessMessage(null);
-
-      await completeWalkUseCase.execute({
-        route,
-        actualPath:
-          gpsTrackedPath.length > 1
-            ? gpsTrackedPath
-            : undefined,
-      });
-      const refreshedInsights = await getWalkInsightsUseCase.execute();
-      setInsights(refreshedInsights);
-      setSuccessMessage("Parcours enregistre. Bravo !");
-      setRoute(null);
-      resetTrackingState();
-      handleStopGpsTracking();
-    } catch (storageError) {
-      console.error(storageError);
-      setError("Impossible d'enregistrer ce parcours.");
-    } finally {
-      setIsSavingWalk(false);
-    }
-  }
-
   async function handleClearHistoryForDebug() {
     try {
       setError(null);
       setSuccessMessage(null);
       await clearWalkHistoryUseCase.execute();
-      const refreshedInsights = await getWalkInsightsUseCase.execute();
-      setInsights(refreshedInsights);
       setSuccessMessage("Historique vide (debug).");
     } catch (clearError) {
       console.error(clearError);
@@ -608,21 +549,6 @@ export default function HomeScreen() {
         {isGpsTracking && !isCameraFollowingGps ? (
           <Text style={{ color: theme.text }}>
             Recentrage auto dans 4 secondes...
-          </Text>
-        ) : null}
-
-        <Text style={{ color: theme.text }}>
-          Parcours termines: {insights.totalWalks} · Distance totale:{" "}
-          {insights.totalDistanceKm.toFixed(1)} km
-        </Text>
-        <Text style={{ color: theme.text }}>
-          Duree totale: {Math.round(insights.totalDurationMinutes)} min · Vitesse
-          moyenne: {insights.averageSpeedKmh.toFixed(1)} km/h
-        </Text>
-        {insights.totalWalks > 0 ? (
-          <Text style={{ color: theme.text }}>
-            Moyenne par parcours: {insights.averageDistanceKm.toFixed(1)} km /{" "}
-            {Math.round(insights.averageDurationMinutes)} min
           </Text>
         ) : null}
 

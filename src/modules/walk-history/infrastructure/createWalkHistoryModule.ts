@@ -1,5 +1,6 @@
 import { CompleteWalkUseCase } from "../application/use-cases/CompleteWalkUseCase";
 import { ClearWalkHistoryUseCase } from "../application/use-cases/ClearWalkHistoryUseCase";
+import { GetCompletedWalksUseCase } from "../application/use-cases/GetCompletedWalksUseCase";
 import { GetRecentWalkCellsUseCase } from "../application/use-cases/GetRecentWalkCellsUseCase";
 import { GetWalkInsightsUseCase } from "../application/use-cases/GetWalkInsightsUseCase";
 import { H3ReactNativeTraversedCellsAdapter } from "./h3/H3ReactNativeTraversedCellsAdapter";
@@ -14,6 +15,7 @@ export function createWalkHistoryModule() {
     traversedCells,
   );
   const clearWalkHistoryUseCase = new ClearWalkHistoryUseCase(walkHistoryRepository);
+  const getCompletedWalksUseCase = new GetCompletedWalksUseCase(walkHistoryRepository);
   const getRecentWalkCellsUseCase = new GetRecentWalkCellsUseCase(
     walkHistoryRepository,
   );
@@ -22,6 +24,7 @@ export function createWalkHistoryModule() {
   return {
     completeWalkUseCase,
     clearWalkHistoryUseCase,
+    getCompletedWalksUseCase,
     getRecentWalkCellsUseCase,
     getWalkInsightsUseCase,
   };

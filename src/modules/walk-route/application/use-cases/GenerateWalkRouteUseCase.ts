@@ -43,10 +43,6 @@ export class GenerateWalkRouteUseCase {
     });
     const recentWalkCells = await this.recentWalkCells.listRecentTraversedCells(100);
     const seenCells = new Set(recentWalkCells.flat());
-    console.log("[walk-route] novelty baseline", {
-      recentWalksCount: recentWalkCells.length,
-      seenCellsCount: seenCells.size,
-    });
 
     let fallbackBestRoute: WalkRoute | null = null;
     let fallbackBestRouteScore = Number.NEGATIVE_INFINITY;
@@ -62,8 +58,6 @@ export class GenerateWalkRouteUseCase {
     ) {
       let bestRoute: WalkRoute | null = null;
       let bestScore = Number.NEGATIVE_INFINITY;
-      let testedCandidates = 0;
-      let rejectedCandidates = 0;
       let bestRejectedRoute: WalkRoute | null = null;
       let bestRejectedScore = Number.NEGATIVE_INFINITY;
       let bestRouteScoreDetails: RouteScoreDetails | null = null;
@@ -81,12 +75,6 @@ export class GenerateWalkRouteUseCase {
       });
       const routingCandidates = this.selectTopCandidates(preScoredCandidates);
 
-      console.log("[walk-route] generated waypoint candidates", {
-        attempt,
-        generatedCandidates: generatedCandidates.length,
-        shortlistedCandidates: routingCandidates.length,
-        shortlistTopScore: Number((routingCandidates[0]?.preScore ?? 0).toFixed(4)),
-      });
 
       let nextCandidateIndex = 0;
       const workerCount = Math.min(
@@ -110,7 +98,6 @@ export class GenerateWalkRouteUseCase {
               candidate: routingCandidate.candidate,
               waypoints: routingCandidate.waypoints,
             });
-            testedCandidates += 1;
 
             const traversedCells = this.polylineCells.extractFromPolyline({
               polyline: route.geometry,
@@ -126,26 +113,8 @@ export class GenerateWalkRouteUseCase {
               targetDistanceMeters,
               targetDurationMinutes: input.targetDurationMinutes,
             });
-            console.log("[walk-route] candidate evaluated", {
-              attempt,
-              ellipseIndex: routingCandidate.ellipseIndex,
-              phaseOffset: routingCandidate.phaseOffset,
-              preScore: Number(routingCandidate.preScore.toFixed(4)),
-              distanceKm: Number((route.distanceMeters / 1000).toFixed(2)),
-              durationMin: Math.round(route.durationSeconds / 60),
-              traversedCells: traversedCells.length,
-              noveltyScore: Number(scoreDetails.noveltyScore.toFixed(4)),
-              loopQualityScore: Number(scoreDetails.loopQualityScore.toFixed(4)),
-              backtrackRatio: Number(scoreDetails.backtrackRatio.toFixed(4)),
-              revisitRatio: Number(scoreDetails.revisitRatio.toFixed(4)),
-              repeatedEdgeRatio: Number(scoreDetails.repeatedEdgeRatio.toFixed(4)),
-              totalScore: Number(scoreDetails.totalScore.toFixed(4)),
-              isRejected: scoreDetails.isRejected,
-              rejectionReason: scoreDetails.rejectionReason,
-            });
 
             if (scoreDetails.isRejected) {
-              rejectedCandidates += 1;
               if (scoreDetails.totalScore > bestRejectedScore) {
                 bestRejectedScore = scoreDetails.totalScore;
                 bestRejectedRoute = route;
@@ -158,13 +127,6 @@ export class GenerateWalkRouteUseCase {
               bestScore = scoreDetails.totalScore;
               bestRoute = route;
               bestRouteScoreDetails = scoreDetails;
-              console.log("[walk-route] candidate is new best", {
-                attempt,
-                ellipseIndex: routingCandidate.ellipseIndex,
-                phaseOffset: routingCandidate.phaseOffset,
-                bestScore: Number(bestScore.toFixed(4)),
-                loopQualityScore: Number(scoreDetails.loopQualityScore.toFixed(4)),
-              });
             }
           } catch (routingError) {
             console.warn(
@@ -198,17 +160,6 @@ export class GenerateWalkRouteUseCase {
             bestRoute,
             bestRouteScoreDetails,
           );
-          console.log("[walk-route] selected route", {
-            attempt,
-            testedCandidates,
-            rejectedCandidates,
-            selectedDistanceKm: Number((selectedRoute.distanceMeters / 1000).toFixed(2)),
-            selectedDurationMin: Math.round(selectedRoute.durationSeconds / 60),
-            finalRouteScore: Number(bestScore.toFixed(4)),
-            selectedLoopQualityScore: Number(
-              (selectedRoute.scoring?.loopQualityScore ?? 0).toFixed(4),
-            ),
-          });
           return selectedRoute;
         }
       }
