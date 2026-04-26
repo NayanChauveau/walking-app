@@ -1,6 +1,5 @@
-import * as Location from "expo-location";
 import { useEffect, useState } from "react";
-import { Button, ScrollView, Text } from "react-native";
+import { ActivityIndicator, Button, ScrollView, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import Map from "@/components/map";
@@ -30,7 +29,12 @@ const recentWalkCellsPort: RecentWalkCellsPort = {
   },
 };
 
-const { generateWalkRouteUseCase } = createWalkRouteModule({
+const {
+  generateWalkRouteUseCase,
+  getLastKnownUserStartPointUseCase,
+  getUserStartPointUseCase,
+  saveLastKnownUserStartPointUseCase,
+} = createWalkRouteModule({
   openRouteServiceApiKey: process.env.EXPO_PUBLIC_OPENROUTESERVICE_API_KEY!,
   recentWalkCells: recentWalkCellsPort,
 });
@@ -55,28 +59,80 @@ export default function HomeScreen() {
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSavingWalk, setIsSavingWalk] = useState(false);
+  const [isResolvingStartPoint, setIsResolvingStartPoint] = useState(true);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadUserLocation() {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-
-      if (status !== "granted") {
-        setError("Permission de localisation refusée.");
-        return;
-      }
-
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      setUserCoordinates({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
+  function hasPositionChanged(
+    previous: Coordinates | null,
+    current: Coordinates,
+  ): boolean {
+    if (!previous) {
+      return true;
     }
 
+    const earthRadiusMeters = 6_371_000;
+    const latitudeDiffRadians =
+      ((current.latitude - previous.latitude) * Math.PI) / 180;
+    const longitudeDiffRadians =
+      ((current.longitude - previous.longitude) * Math.PI) / 180;
+    const previousLatitudeRadians = (previous.latitude * Math.PI) / 180;
+    const currentLatitudeRadians = (current.latitude * Math.PI) / 180;
+
+    const haversine =
+      Math.sin(latitudeDiffRadians / 2) ** 2 +
+      Math.cos(previousLatitudeRadians) *
+        Math.cos(currentLatitudeRadians) *
+        Math.sin(longitudeDiffRadians / 2) ** 2;
+
+    const distanceMeters =
+      2 * earthRadiusMeters * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+
+    return distanceMeters >= 15;
+  }
+
+  async function resolveUserStartPoint() {
+    setIsResolvingStartPoint(true);
+
+    try {
+      const startPoint = await getUserStartPointUseCase.execute();
+      setUserCoordinates((previousStartPoint) =>
+        hasPositionChanged(previousStartPoint, startPoint)
+          ? startPoint
+          : previousStartPoint,
+      );
+      setError(null);
+
+      await saveLastKnownUserStartPointUseCase.execute({ startPoint });
+      return startPoint;
+    } catch (locationError) {
+      console.error(locationError);
+      setError("Position utilisateur indisponible.");
+      return null;
+    } finally {
+      setIsResolvingStartPoint(false);
+    }
+  }
+
+  useEffect(() => {
+    async function loadLastKnownUserLocation() {
+      try {
+        const lastKnownStartPoint =
+          await getLastKnownUserStartPointUseCase.execute();
+
+        if (lastKnownStartPoint) {
+          setUserCoordinates(lastKnownStartPoint);
+        }
+      } catch (lastKnownLocationError) {
+        console.error(lastKnownLocationError);
+      }
+    }
+
+    async function loadUserLocation() {
+      await resolveUserStartPoint();
+    }
+
+    loadLastKnownUserLocation();
     loadUserLocation();
   }, []);
 
@@ -95,7 +151,7 @@ export default function HomeScreen() {
 
   async function handleGenerateRoute() {
     if (!userCoordinates) {
-      setError("Position utilisateur indisponible.");
+      setError("Position en cours de detection. Reessayez dans un instant.");
       return;
     }
 
@@ -110,8 +166,8 @@ export default function HomeScreen() {
       });
 
       setRoute(generatedRoute);
-    } catch (error) {
-      console.error(error);
+    } catch (generationError) {
+      console.error(generationError);
       setError("Impossible de générer un parcours pour cette tentative.");
     } finally {
       setIsGenerating(false);
@@ -150,7 +206,13 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Button
-          title={isGenerating ? "Génération..." : "Générer un parcours"}
+          title={
+            isGenerating
+              ? "Generation..."
+              : !userCoordinates
+                ? "Localisation..."
+                : "Generer un parcours"
+          }
           onPress={handleGenerateRoute}
           disabled={isGenerating || !userCoordinates}
         />
@@ -182,10 +244,47 @@ export default function HomeScreen() {
           </Text>
         ) : null}
 
-        <Map
-          userCoordinates={userCoordinates}
-          routeGeometry={route?.geometry ?? []}
-        />
+        {!userCoordinates ? (
+          <SafeAreaView
+            style={{
+              height: 500,
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+            }}
+          >
+            {error ? (
+              <>
+                <Text style={{ color: theme.text }}>
+                  Impossible de recuperer votre position.
+                </Text>
+                <Button
+                  title="Reessayer la localisation"
+                  onPress={resolveUserStartPoint}
+                />
+              </>
+            ) : (
+              <>
+                <ActivityIndicator size="large" color={theme.tint} />
+                <Text style={{ color: theme.text }}>
+                  Recherche de votre position en cours...
+                </Text>
+              </>
+            )}
+          </SafeAreaView>
+        ) : (
+          <>
+            {isResolvingStartPoint ? (
+              <Text style={{ color: theme.text }}>
+                Mise a jour de votre position...
+              </Text>
+            ) : null}
+          <Map
+            userCoordinates={userCoordinates}
+            routeGeometry={route?.geometry ?? []}
+          />
+          </>
+        )}
 
         <Button
           title={isSavingWalk ? "Enregistrement..." : "Terminer le parcours"}

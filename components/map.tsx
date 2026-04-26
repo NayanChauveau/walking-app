@@ -41,14 +41,15 @@ export default function Map({ userCoordinates, routeGeometry = [] }: MapProps) {
     width: "100%",
   } as const;
 
+  if (!userCoordinates && routeGeometry.length === 0) {
+    return <Text>Position utilisateur en attente...</Text>;
+  }
+
   const cameraPosition =
     routeGeometry.length > 0
       ? getCameraPositionForGeometry(routeGeometry)
       : {
-          coordinates: userCoordinates ?? {
-            latitude: 43.2965,
-            longitude: 5.3698,
-          },
+          coordinates: userCoordinates!,
           zoom: 15,
         };
 
