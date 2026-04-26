@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Button, ScrollView, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Location from "expo-location";
 
 import Map from "@/components/map";
 import { Colors } from "@/constants/theme";
@@ -59,6 +60,12 @@ export default function HomeScreen() {
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSavingWalk, setIsSavingWalk] = useState(false);
+  const [isGpsTracking, setIsGpsTracking] = useState(false);
+  const [gpsProgressPercent, setGpsProgressPercent] = useState(0);
+  const [gpsTrackedCoordinates, setGpsTrackedCoordinates] =
+    useState<Coordinates | null>(null);
+  const [gpsSubscription, setGpsSubscription] =
+    useState<Location.LocationSubscription | null>(null);
   const [isResolvingStartPoint, setIsResolvingStartPoint] = useState(true);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -174,6 +181,92 @@ export default function HomeScreen() {
     }
   }
 
+  function getDistanceMeters(left: Coordinates, right: Coordinates): number {
+    const earthRadiusMeters = 6_371_000;
+    const latitudeDiffRadians = ((right.latitude - left.latitude) * Math.PI) / 180;
+    const longitudeDiffRadians = ((right.longitude - left.longitude) * Math.PI) / 180;
+    const leftLatitudeRadians = (left.latitude * Math.PI) / 180;
+    const rightLatitudeRadians = (right.latitude * Math.PI) / 180;
+
+    const haversine =
+      Math.sin(latitudeDiffRadians / 2) ** 2 +
+      Math.cos(leftLatitudeRadians) *
+        Math.cos(rightLatitudeRadians) *
+        Math.sin(longitudeDiffRadians / 2) ** 2;
+
+    return 2 * earthRadiusMeters * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  }
+
+  function computeProgressPercent(
+    geometry: Coordinates[],
+    current: Coordinates,
+  ): number {
+    if (geometry.length <= 1) {
+      return 0;
+    }
+
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < geometry.length; index += 1) {
+      const distance = getDistanceMeters(geometry[index], current);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    }
+
+    const progress = (nearestIndex / (geometry.length - 1)) * 100;
+    return Math.max(0, Math.min(100, progress));
+  }
+
+  async function handleStartGpsTracking() {
+    if (!route || isGpsTracking) {
+      return;
+    }
+
+    try {
+      const permissionResult = await Location.requestForegroundPermissionsAsync();
+      if (permissionResult.status !== "granted") {
+        setError("Permission GPS requise pour demarrer le parcours.");
+        return;
+      }
+
+      setError(null);
+      setSuccessMessage(null);
+      setGpsProgressPercent(0);
+      setIsGpsTracking(true);
+
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 1000,
+          distanceInterval: 3,
+        },
+        (position) => {
+          const nextCoordinates = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+          setGpsTrackedCoordinates(nextCoordinates);
+          setGpsProgressPercent(computeProgressPercent(route.geometry, nextCoordinates));
+        },
+      );
+
+      setGpsSubscription(subscription);
+    } catch (trackingError) {
+      console.error(trackingError);
+      setIsGpsTracking(false);
+      setError("Impossible de demarrer le suivi GPS.");
+    }
+  }
+
+  function handleStopGpsTracking() {
+    gpsSubscription?.remove();
+    setGpsSubscription(null);
+    setIsGpsTracking(false);
+  }
+
   async function handleConfirmWalkCompletion() {
     if (!route) {
       return;
@@ -189,6 +282,9 @@ export default function HomeScreen() {
       setInsights(refreshedInsights);
       setSuccessMessage("Parcours enregistre. Bravo !");
       setRoute(null);
+      setGpsTrackedCoordinates(null);
+      setGpsProgressPercent(0);
+      handleStopGpsTracking();
     } catch (storageError) {
       console.error(storageError);
       setError("Impossible d'enregistrer ce parcours.");
@@ -196,6 +292,12 @@ export default function HomeScreen() {
       setIsSavingWalk(false);
     }
   }
+
+  useEffect(() => {
+    return () => {
+      gpsSubscription?.remove();
+    };
+  }, [gpsSubscription]);
 
   return (
     <SafeAreaView
@@ -214,12 +316,23 @@ export default function HomeScreen() {
                 : "Generer un parcours"
           }
           onPress={handleGenerateRoute}
-          disabled={isGenerating || !userCoordinates}
+          disabled={isGenerating || !userCoordinates || isGpsTracking}
+        />
+        <Button
+          title={isGpsTracking ? "Arreter le suivi GPS" : "Demarrer le parcours GPS"}
+          onPress={isGpsTracking ? handleStopGpsTracking : handleStartGpsTracking}
+          disabled={!route}
         />
 
         {error ? <Text style={{ color: "#ff4d4f" }}>{error}</Text> : null}
         {successMessage ? (
           <Text style={{ color: "#3fb950" }}>{successMessage}</Text>
+        ) : null}
+        {isGpsTracking ? (
+          <Text style={{ color: theme.text }}>
+            Suivi GPS actif - progression sur la polyline choisie:{" "}
+            {Math.round(gpsProgressPercent)}%
+          </Text>
         ) : null}
 
         <Text style={{ color: theme.text }}>
@@ -290,6 +403,7 @@ export default function HomeScreen() {
             ) : null}
           <Map
             userCoordinates={userCoordinates}
+            trackedUserCoordinates={gpsTrackedCoordinates}
             routeGeometry={route?.geometry ?? []}
           />
           </>

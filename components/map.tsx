@@ -5,6 +5,7 @@ import type { Coordinates } from "@/src/modules/walk-route";
 
 type MapProps = {
   userCoordinates: Coordinates | null;
+  trackedUserCoordinates?: Coordinates | null;
   routeGeometry?: Coordinates[];
 };
 
@@ -35,7 +36,11 @@ function getCameraPositionForGeometry(geometry: Coordinates[]) {
   };
 }
 
-export default function Map({ userCoordinates, routeGeometry = [] }: MapProps) {
+export default function Map({
+  userCoordinates,
+  trackedUserCoordinates = null,
+  routeGeometry = [],
+}: MapProps) {
   const mapStyle = {
     height: 500,
     width: "100%",
@@ -53,15 +58,26 @@ export default function Map({ userCoordinates, routeGeometry = [] }: MapProps) {
           zoom: 15,
         };
 
-  const markers = userCoordinates
-    ? [
-        {
-          id: "user-location",
-          coordinates: userCoordinates,
-          title: "Vous êtes ici",
-        },
-      ]
-    : [];
+  const markers = [
+    ...(userCoordinates
+      ? [
+          {
+            id: "user-location",
+            coordinates: userCoordinates,
+            title: "Point de depart",
+          },
+        ]
+      : []),
+    ...(trackedUserCoordinates
+      ? [
+          {
+            id: "tracked-user-location",
+            coordinates: trackedUserCoordinates,
+            title: "Position GPS",
+          },
+        ]
+      : []),
+  ];
 
   const polylines =
     routeGeometry.length > 0
