@@ -13,6 +13,7 @@ type MapProps = {
     zoom: number;
   } | null;
   onCameraMove?: (camera: { coordinates: Coordinates; zoom: number }) => void;
+  onRoutePress?: (routeId: "primary" | "secondary") => void;
 };
 
 function getCameraPositionForGeometry(geometry: Coordinates[]) {
@@ -49,6 +50,7 @@ export default function Map({
   traversedUntilIndex = 0,
   cameraOverride = null,
   onCameraMove,
+  onRoutePress,
 }: MapProps) {
   const mapStyle = {
     height: 500,
@@ -114,7 +116,7 @@ export default function Map({
           {
             id: "secondary-route",
             coordinates: secondaryRouteGeometry,
-            color: "#7A63D6",
+            color: "#8A8F98",
             width: 8,
           },
         ]
@@ -169,6 +171,19 @@ export default function Map({
               }
             : undefined
         }
+        onPolylineClick={
+          onRoutePress
+            ? (event) => {
+                if (event.id === "secondary-route") {
+                  onRoutePress("secondary");
+                  return;
+                }
+                if (event.id === "traversed-route" || event.id === "remaining-route") {
+                  onRoutePress("primary");
+                }
+              }
+            : undefined
+        }
       />
     );
   }
@@ -198,6 +213,19 @@ export default function Map({
                   },
                   zoom: event.zoom,
                 });
+              }
+            : undefined
+        }
+        onPolylineClick={
+          onRoutePress
+            ? (event) => {
+                if (event.id === "secondary-route") {
+                  onRoutePress("secondary");
+                  return;
+                }
+                if (event.id === "traversed-route" || event.id === "remaining-route") {
+                  onRoutePress("primary");
+                }
               }
             : undefined
         }

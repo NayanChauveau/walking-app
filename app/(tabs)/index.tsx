@@ -251,12 +251,26 @@ export default function HomeScreen() {
   }
 
   const selectedRoute = buildSelectedRoute(route);
+  const noveltyRouteGeometry =
+    route?.alternatives?.novelty?.geometry ?? route?.geometry ?? [];
+  const poiRouteGeometry = route?.alternatives?.poi?.geometry ?? [];
   const secondaryRouteGeometry =
     !isGpsTracking && route
       ? selectedRouteMode === "novelty"
-        ? (route.alternatives?.poi?.geometry ?? [])
-        : (route.alternatives?.novelty?.geometry ?? [])
+        ? poiRouteGeometry
+        : noveltyRouteGeometry
       : [];
+  function handleRoutePress(routeId: "primary" | "secondary") {
+    if (isGpsTracking || !route || !route.alternatives?.poi) {
+      return;
+    }
+
+    if (routeId === "primary") {
+      return;
+    }
+
+    setSelectedRouteMode((previous) => (previous === "novelty" ? "poi" : "novelty"));
+  }
 
   async function handleStartGpsTracking() {
     if (!selectedRoute || isGpsTracking) {
@@ -519,34 +533,6 @@ export default function HomeScreen() {
 
         {selectedRoute ? (
           <>
-            {route?.alternatives?.poi || route?.alternatives?.novelty ? (
-              <View style={styles.routeSwitchRow}>
-                <Pressable
-                  style={[
-                    styles.routeSwitchButton,
-                    selectedRouteMode === "novelty" && styles.routeSwitchButtonSelected,
-                  ]}
-                  onPress={() => setSelectedRouteMode("novelty")}
-                  disabled={isGpsTracking}
-                >
-                  <Text style={[styles.routeSwitchLabel, { color: theme.text }]}>
-                    Route Novelty
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.routeSwitchButton,
-                    selectedRouteMode === "poi" && styles.routeSwitchButtonSelected,
-                  ]}
-                  onPress={() => setSelectedRouteMode("poi")}
-                  disabled={isGpsTracking || !route?.alternatives?.poi}
-                >
-                  <Text style={[styles.routeSwitchLabel, { color: theme.text }]}>
-                    Route POI
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
             <Text style={{ color: theme.text }}>
               Distance : {(selectedRoute.distanceMeters / 1000).toFixed(1)} km · Durée :{" "}
               {Math.round(selectedRoute.durationSeconds / 60)} min
@@ -607,6 +593,7 @@ export default function HomeScreen() {
               routeGeometry={selectedRoute?.geometry ?? []}
               secondaryRouteGeometry={secondaryRouteGeometry}
               traversedUntilIndex={selectedRoute ? trackingStats.traversedRouteIndex : 0}
+              onRoutePress={handleRoutePress}
               cameraOverride={
                 isGpsTracking && isCameraFollowingGps && gpsTrackedCoordinates
                   ? {
@@ -665,26 +652,6 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  routeSwitchRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  routeSwitchButton: {
-    flex: 1,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#8A8F98",
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  routeSwitchButtonSelected: {
-    borderColor: "#2F80ED",
-    backgroundColor: "rgba(47, 128, 237, 0.15)",
-  },
-  routeSwitchLabel: {
-    color: "#fff",
-    fontWeight: "600",
-  },
   modalBackdrop: {
     flex: 1,
     justifyContent: "center",
