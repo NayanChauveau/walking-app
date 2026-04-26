@@ -116,10 +116,18 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <ThemedText type="title">Historique</ThemedText>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        <View style={styles.headerCard}>
+          <ThemedText style={styles.headerEyebrow}>EXPLORE</ThemedText>
+          <ThemedText type="title">Walking History</ThemedText>
+          <ThemedText style={{ color: theme.icon }}>
+            Replay your latest sessions with route, distance and speed insights.
+          </ThemedText>
+        </View>
         {walks.length === 0 ? (
-          <ThemedText>Aucun parcours enregistre pour le moment.</ThemedText>
+          <ThemedView style={styles.emptyCard}>
+            <ThemedText>Aucun parcours enregistre pour le moment.</ThemedText>
+          </ThemedView>
         ) : (
           walks.map((walk) => (
             <ThemedView key={walk.id} style={styles.walkCard}>
@@ -148,13 +156,36 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     gap: 12,
+    paddingBottom: 120,
+  },
+  headerCard: {
+    borderRadius: 20,
+    padding: 16,
+    gap: 8,
+    backgroundColor: "#121A36",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  headerEyebrow: {
+    fontSize: 12,
+    letterSpacing: 1.2,
+    color: "#8EA2FF",
+    fontWeight: "700",
+  },
+  emptyCard: {
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(138,143,152,0.2)",
   },
   walkCard: {
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 16,
+    padding: 12,
     flexDirection: "row",
     gap: 12,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(138,143,152,0.2)",
   },
   miniMap: {
     width: 120,
