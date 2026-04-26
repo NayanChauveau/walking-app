@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Button, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
@@ -61,6 +61,7 @@ export default function HomeScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSavingWalk, setIsSavingWalk] = useState(false);
   const [isGpsTracking, setIsGpsTracking] = useState(false);
+  const [isCameraFollowingGps, setIsCameraFollowingGps] = useState(false);
   const [isMapInteracting, setIsMapInteracting] = useState(false);
   const [gpsProgressPercent, setGpsProgressPercent] = useState(0);
   const [gpsTrackedCoordinates, setGpsTrackedCoordinates] =
@@ -70,6 +71,9 @@ export default function HomeScreen() {
   const [isResolvingStartPoint, setIsResolvingStartPoint] = useState(true);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const mapFollowResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   function hasPositionChanged(
     previous: Coordinates | null,
@@ -237,6 +241,7 @@ export default function HomeScreen() {
       setSuccessMessage(null);
       setGpsProgressPercent(0);
       setIsGpsTracking(true);
+      setIsCameraFollowingGps(true);
 
       const subscription = await Location.watchPositionAsync(
         {
@@ -266,6 +271,11 @@ export default function HomeScreen() {
     gpsSubscription?.remove();
     setGpsSubscription(null);
     setIsGpsTracking(false);
+    setIsCameraFollowingGps(false);
+    if (mapFollowResumeTimeoutRef.current) {
+      clearTimeout(mapFollowResumeTimeoutRef.current);
+      mapFollowResumeTimeoutRef.current = null;
+    }
   }
 
   async function handleConfirmWalkCompletion() {
@@ -297,8 +307,32 @@ export default function HomeScreen() {
   useEffect(() => {
     return () => {
       gpsSubscription?.remove();
+      if (mapFollowResumeTimeoutRef.current) {
+        clearTimeout(mapFollowResumeTimeoutRef.current);
+      }
     };
   }, [gpsSubscription]);
+
+  function handleMapTouchStart() {
+    setIsMapInteracting(true);
+
+    if (!isGpsTracking) {
+      return;
+    }
+
+    setIsCameraFollowingGps(false);
+    if (mapFollowResumeTimeoutRef.current) {
+      clearTimeout(mapFollowResumeTimeoutRef.current);
+    }
+    mapFollowResumeTimeoutRef.current = setTimeout(() => {
+      setIsCameraFollowingGps(true);
+      mapFollowResumeTimeoutRef.current = null;
+    }, 4000);
+  }
+
+  function handleMapTouchEnd() {
+    setIsMapInteracting(false);
+  }
 
   return (
     <SafeAreaView
@@ -334,6 +368,11 @@ export default function HomeScreen() {
           <Text style={{ color: theme.text }}>
             Suivi GPS actif - progression sur la polyline choisie:{" "}
             {Math.round(gpsProgressPercent)}%
+          </Text>
+        ) : null}
+        {isGpsTracking && !isCameraFollowingGps ? (
+          <Text style={{ color: theme.text }}>
+            Recentrage auto dans 4 secondes...
           </Text>
         ) : null}
 
@@ -404,14 +443,21 @@ export default function HomeScreen() {
               </Text>
             ) : null}
           <View
-            onTouchStart={() => setIsMapInteracting(true)}
-            onTouchEnd={() => setIsMapInteracting(false)}
-            onTouchCancel={() => setIsMapInteracting(false)}
+            onTouchStart={handleMapTouchStart}
+            onTouchEnd={handleMapTouchEnd}
+            onTouchCancel={handleMapTouchEnd}
           >
             <Map
               userCoordinates={userCoordinates}
-              trackedUserCoordinates={gpsTrackedCoordinates}
               routeGeometry={route?.geometry ?? []}
+              cameraOverride={
+                isGpsTracking && isCameraFollowingGps && gpsTrackedCoordinates
+                  ? {
+                      coordinates: gpsTrackedCoordinates,
+                      zoom: 17,
+                    }
+                  : null
+              }
             />
           </View>
           </>

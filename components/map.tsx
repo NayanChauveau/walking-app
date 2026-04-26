@@ -5,8 +5,11 @@ import type { Coordinates } from "@/src/modules/walk-route";
 
 type MapProps = {
   userCoordinates: Coordinates | null;
-  trackedUserCoordinates?: Coordinates | null;
   routeGeometry?: Coordinates[];
+  cameraOverride?: {
+    coordinates: Coordinates;
+    zoom: number;
+  } | null;
 };
 
 function getCameraPositionForGeometry(geometry: Coordinates[]) {
@@ -38,8 +41,8 @@ function getCameraPositionForGeometry(geometry: Coordinates[]) {
 
 export default function Map({
   userCoordinates,
-  trackedUserCoordinates = null,
   routeGeometry = [],
+  cameraOverride = null,
 }: MapProps) {
   const mapStyle = {
     height: 500,
@@ -51,29 +54,36 @@ export default function Map({
   }
 
   const cameraPosition =
-    routeGeometry.length > 0
+    cameraOverride ??
+    (routeGeometry.length > 0
       ? getCameraPositionForGeometry(routeGeometry)
       : {
           coordinates: userCoordinates!,
           zoom: 15,
-        };
+        });
+
+  const startCoordinates = routeGeometry.length > 0 ? routeGeometry[0] : null;
+  const endCoordinates =
+    routeGeometry.length > 1 ? routeGeometry[routeGeometry.length - 1] : null;
 
   const markers = [
-    ...(userCoordinates
+    ...(startCoordinates
       ? [
           {
-            id: "user-location",
-            coordinates: userCoordinates,
-            title: "Point de depart",
+            id: "route-start",
+            coordinates: startCoordinates,
+            title: "Depart",
+            tintColor: "#E53935",
           },
         ]
       : []),
-    ...(trackedUserCoordinates
+    ...(endCoordinates
       ? [
           {
-            id: "tracked-user-location",
-            coordinates: trackedUserCoordinates,
-            title: "Position GPS",
+            id: "route-end",
+            coordinates: endCoordinates,
+            title: "Arrivee",
+            tintColor: "#E53935",
           },
         ]
       : []),
@@ -85,8 +95,8 @@ export default function Map({
           {
             id: "generated-route",
             coordinates: routeGeometry,
-            color: "#FF0000",
-            width: 8,
+            color: "#2F80ED",
+            width: 10,
           },
         ]
       : [];
@@ -98,6 +108,8 @@ export default function Map({
         cameraPosition={cameraPosition}
         markers={markers}
         polylines={polylines}
+        properties={{ isMyLocationEnabled: true }}
+        uiSettings={{ myLocationButtonEnabled: true }}
       />
     );
   }
@@ -109,6 +121,8 @@ export default function Map({
         cameraPosition={cameraPosition}
         markers={markers}
         polylines={polylines}
+        properties={{ isMyLocationEnabled: true }}
+        uiSettings={{ myLocationButtonEnabled: true }}
       />
     );
   }
