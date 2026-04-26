@@ -7,33 +7,30 @@ type GenerateInput = {
 };
 
 export class WaypointGenerator {
+  private static readonly TOTAL_WAYPOINTS = 7; // start + 6 waypoints
+
   generateOnEllipse({ ellipse }: GenerateInput): Waypoint[] {
-    return [
-      {
-        coordinates: ellipse.start,
-        order: 0,
-        role: "start",
-        positionOnEllipse: 0,
+    return Array.from(
+      { length: WaypointGenerator.TOTAL_WAYPOINTS },
+      (_, index): Waypoint => {
+        if (index === 0) {
+          return {
+            coordinates: ellipse.start,
+            order: 0,
+            role: "start",
+            positionOnEllipse: 0,
+          };
+        }
+
+        const positionOnEllipse = index / WaypointGenerator.TOTAL_WAYPOINTS;
+        return {
+          coordinates: this.getPointOnEllipse(ellipse, positionOnEllipse),
+          order: index,
+          role: "generated",
+          positionOnEllipse,
+        };
       },
-      {
-        coordinates: this.getPointOnEllipse(ellipse, 0.25),
-        order: 1,
-        role: "quarter",
-        positionOnEllipse: 0.25,
-      },
-      {
-        coordinates: this.getPointOnEllipse(ellipse, 0.5),
-        order: 2,
-        role: "half",
-        positionOnEllipse: 0.5,
-      },
-      {
-        coordinates: this.getPointOnEllipse(ellipse, 0.75),
-        order: 3,
-        role: "three-quarters",
-        positionOnEllipse: 0.75,
-      },
-    ];
+    );
   }
 
   private getPointOnEllipse(ellipse: Ellipse, position: number): Coordinates {

@@ -21,6 +21,7 @@ type MapboxDirectionsResponse = {
 export class MapboxDirectionsAdapter implements RoutingPort {
   private static readonly ELLIPSE_SNAP_SAMPLE_COUNT = 96;
   private static readonly MAX_SNAP_DISTANCE_METERS = 80;
+  private static readonly MIN_SNAP_VALID_WAYPOINTS = 5;
 
   constructor(private readonly accessToken: string) {}
 
@@ -28,19 +29,27 @@ export class MapboxDirectionsAdapter implements RoutingPort {
     candidate: WalkCandidate;
     waypoints: Waypoint[];
   }): Promise<WalkRoute> {
-    const snappedWaypoints = this.snapWaypointsLocally({
+    const snapResult = this.snapWaypointsLocally({
       candidate: input.candidate,
       waypoints: input.waypoints,
     });
 
+    if (snapResult.snappedWaypointsCount < MapboxDirectionsAdapter.MIN_SNAP_VALID_WAYPOINTS) {
+      throw new Error(
+        `Local waypoint snap failed: ${snapResult.snappedWaypointsCount}/${snapResult.totalWaypointsCount} waypoints snapped`,
+      );
+    }
+
     console.log("[mapbox-directions] waypoint snap", {
       before: input.waypoints.map((waypoint) => waypoint.coordinates),
-      after: snappedWaypoints.map((waypoint) => waypoint.coordinates),
+      after: snapResult.waypoints.map((waypoint) => waypoint.coordinates),
+      snappedWaypointsCount: snapResult.snappedWaypointsCount,
+      totalWaypointsCount: snapResult.totalWaypointsCount,
     });
 
     const loopCoordinates = [
-      ...snappedWaypoints.map((waypoint) => waypoint.coordinates),
-      snappedWaypoints[0].coordinates,
+      ...snapResult.waypoints.map((waypoint) => waypoint.coordinates),
+      snapResult.waypoints[0].coordinates,
     ];
     const coordinatesPath = loopCoordinates
       .map((point) => `${point.longitude},${point.latitude}`)
@@ -93,13 +102,18 @@ export class MapboxDirectionsAdapter implements RoutingPort {
   private snapWaypointsLocally(input: {
     candidate: WalkCandidate;
     waypoints: Waypoint[];
-  }): Waypoint[] {
+  }): {
+    waypoints: Waypoint[];
+    snappedWaypointsCount: number;
+    totalWaypointsCount: number;
+  } {
     const ellipsePolyline = this.createEllipsePolyline(input.candidate);
     const ellipseLine = lineString(
       ellipsePolyline.map((coordinates) => [coordinates.longitude, coordinates.latitude]),
     );
 
-    return input.waypoints.map((waypoint) => {
+    let snappedWaypointsCount = 0;
+    const waypoints = input.waypoints.map((waypoint) => {
       const nearestPoint = nearestPointOnLineTurf(
         ellipseLine,
         point([waypoint.coordinates.longitude, waypoint.coordinates.latitude]),
@@ -119,11 +133,18 @@ export class MapboxDirectionsAdapter implements RoutingPort {
         return waypoint;
       }
 
+      snappedWaypointsCount += 1;
       return {
         ...waypoint,
         coordinates: snappedCoordinates,
       };
     });
+
+    return {
+      waypoints,
+      snappedWaypointsCount,
+      totalWaypointsCount: input.waypoints.length,
+    };
   }
 
   private createEllipsePolyline(candidate: WalkCandidate): Coordinates[] {

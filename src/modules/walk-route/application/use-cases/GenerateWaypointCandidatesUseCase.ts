@@ -114,7 +114,7 @@ export class GenerateWaypointCandidatesUseCase {
     ellipse: Ellipse;
     phaseOffset: number;
   }): Waypoint[] {
-    return input.waypoints.map((waypoint) => {
+    const shiftedWaypoints = input.waypoints.map((waypoint) => {
       if (waypoint.role === "start") {
         return waypoint;
       }
@@ -127,6 +127,27 @@ export class GenerateWaypointCandidatesUseCase {
         coordinates: this.getPointOnEllipse(input.ellipse, shiftedPosition),
       };
     });
+
+    const startWaypoint = shiftedWaypoints.find((waypoint) => waypoint.role === "start");
+    if (!startWaypoint) {
+      throw new Error("Missing start waypoint");
+    }
+
+    const orderedGeneratedWaypoints = shiftedWaypoints
+      .filter((waypoint) => waypoint.role !== "start")
+      .sort((left, right) => left.positionOnEllipse - right.positionOnEllipse)
+      .map((waypoint, index) => ({
+        ...waypoint,
+        order: index + 1,
+      }));
+
+    return [
+      {
+        ...startWaypoint,
+        order: 0,
+      },
+      ...orderedGeneratedWaypoints,
+    ];
   }
 
   private getPointOnEllipse(ellipse: Ellipse, position: number): Coordinates {
