@@ -143,6 +143,39 @@ export default function Map({
       : []),
   ];
 
+  const handleCameraMove = onCameraMove
+    ? (event: {
+        coordinates: { latitude?: number; longitude?: number };
+        zoom: number;
+      }) => {
+        if (
+          event.coordinates.latitude === undefined ||
+          event.coordinates.longitude === undefined
+        ) {
+          return;
+        }
+        onCameraMove({
+          coordinates: {
+            latitude: event.coordinates.latitude,
+            longitude: event.coordinates.longitude,
+          },
+          zoom: event.zoom,
+        });
+      }
+    : undefined;
+
+  const handlePolylineClick = onRoutePress
+    ? (event: { id?: string }) => {
+        if (event.id === "secondary-route") {
+          onRoutePress("secondary");
+          return;
+        }
+        if (event.id === "traversed-route" || event.id === "remaining-route") {
+          onRoutePress("primary");
+        }
+      }
+    : undefined;
+
   if (Platform.OS === "ios") {
     return (
       <AppleMaps.View
@@ -152,38 +185,8 @@ export default function Map({
         polylines={polylines}
         properties={{ isMyLocationEnabled: true }}
         uiSettings={{ myLocationButtonEnabled: true }}
-        onCameraMove={
-          onCameraMove
-            ? (event) => {
-                if (
-                  event.coordinates.latitude === undefined ||
-                  event.coordinates.longitude === undefined
-                ) {
-                  return;
-                }
-                onCameraMove({
-                  coordinates: {
-                    latitude: event.coordinates.latitude,
-                    longitude: event.coordinates.longitude,
-                  },
-                  zoom: event.zoom,
-                });
-              }
-            : undefined
-        }
-        onPolylineClick={
-          onRoutePress
-            ? (event) => {
-                if (event.id === "secondary-route") {
-                  onRoutePress("secondary");
-                  return;
-                }
-                if (event.id === "traversed-route" || event.id === "remaining-route") {
-                  onRoutePress("primary");
-                }
-              }
-            : undefined
-        }
+        onCameraMove={handleCameraMove}
+        onPolylineClick={handlePolylineClick}
       />
     );
   }
@@ -197,38 +200,8 @@ export default function Map({
         polylines={polylines}
         properties={{ isMyLocationEnabled: true }}
         uiSettings={{ myLocationButtonEnabled: true }}
-        onCameraMove={
-          onCameraMove
-            ? (event) => {
-                if (
-                  event.coordinates.latitude === undefined ||
-                  event.coordinates.longitude === undefined
-                ) {
-                  return;
-                }
-                onCameraMove({
-                  coordinates: {
-                    latitude: event.coordinates.latitude,
-                    longitude: event.coordinates.longitude,
-                  },
-                  zoom: event.zoom,
-                });
-              }
-            : undefined
-        }
-        onPolylineClick={
-          onRoutePress
-            ? (event) => {
-                if (event.id === "secondary-route") {
-                  onRoutePress("secondary");
-                  return;
-                }
-                if (event.id === "traversed-route" || event.id === "remaining-route") {
-                  onRoutePress("primary");
-                }
-              }
-            : undefined
-        }
+        onCameraMove={handleCameraMove}
+        onPolylineClick={handlePolylineClick}
       />
     );
   }

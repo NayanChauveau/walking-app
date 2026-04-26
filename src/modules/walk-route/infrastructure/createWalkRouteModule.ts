@@ -7,6 +7,7 @@ import { GenerateWalkCandidateUseCase } from "../application/use-cases/GenerateW
 import { AggregateTrackingSessionStatsUseCase } from "../application/use-cases/AggregateTrackingSessionStatsUseCase";
 import { EnsureLocalPoiCoverageUseCase } from "../application/use-cases/EnsureLocalPoiCoverageUseCase";
 import { GetUserStartPointUseCase } from "../application/use-cases/GetUserStartPointUseCase";
+import { ResolveRouteSelectionUseCase } from "../application/use-cases/ResolveRouteSelectionUseCase";
 import { SaveLastKnownUserStartPointUseCase } from "../application/use-cases/SaveLastKnownUserStartPointUseCase";
 import type { RecentWalkCellsPort } from "../application/ports/RecentWalkCellsPort";
 import { GenerateWalkRouteUseCase } from "../application/use-cases/GenerateWalkRouteUseCase";
@@ -53,6 +54,7 @@ export function createWalkRouteModule({
   );
   const aggregateTrackingSessionStatsUseCase =
     new AggregateTrackingSessionStatsUseCase();
+  const resolveRouteSelectionUseCase = new ResolveRouteSelectionUseCase();
   const ensureLocalPoiCoverageUseCase = new EnsureLocalPoiCoverageUseCase(poiScoring);
   const generateEllipseForWalkUseCase = new GenerateEllipseForWalkUseCase(
     ellipseGeneration,
@@ -69,6 +71,7 @@ export function createWalkRouteModule({
     generateWalkCandidateUseCase,
     generateWalkRouteUseCase,
     aggregateTrackingSessionStatsUseCase,
+    resolveRouteSelectionUseCase,
     ensureLocalPoiCoverageUseCase,
     getLastKnownUserStartPointUseCase,
     getUserStartPointUseCase,
