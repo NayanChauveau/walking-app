@@ -8,12 +8,11 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import {
-  createWalkHistoryModule,
-  type CompletedWalk,
-} from "@/src/modules/walk-history";
+import type { CompletedWalk } from "@/src/modules/walk-history";
+import { createAppModules } from "@/src/composition/createAppModules";
 
-const { getCompletedWalksUseCase } = createWalkHistoryModule();
+const { walkHistory } = createAppModules();
+const { getCompletedWalksUseCase } = walkHistory;
 
 function getCameraPositionForGeometry(geometry: CompletedWalk["polyline"]) {
   if (geometry.length === 0) {

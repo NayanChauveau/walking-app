@@ -1,32 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Location from "expo-location";
 
-import {
-  createWalkRouteModule,
-  type Coordinates,
-  type RouteSelectionMode,
-  type WalkRoute,
+import type {
+  Coordinates,
+  RouteSelectionMode,
+  WalkRoute,
 } from "@/src/modules/walk-route";
 import type { TrackingSessionStats } from "@/src/modules/walk-route/application/use-cases/AggregateTrackingSessionStatsUseCase";
-import type { RecentWalkCellsPort } from "@/src/modules/walk-route/application/ports/RecentWalkCellsPort";
-import { createWalkHistoryModule } from "@/src/modules/walk-history";
+import type { UserHealthProfile } from "@/src/modules/user-settings";
+import { createAppModules } from "@/src/composition/createAppModules";
 
-const DEFAULT_USER_WEIGHT_KG = 70;
 const WALKING_MET = 3.5;
 const LOCAL_POI_DOWNLOAD_RADIUS_METERS = 2500;
 
+const { walkHistory, walkRoute, userSettings } = createAppModules();
 const {
   clearWalkHistoryUseCase,
   completeWalkUseCase,
-  getRecentWalkCellsUseCase,
-} = createWalkHistoryModule();
-
-const recentWalkCellsPort: RecentWalkCellsPort = {
-  async listRecentTraversedCells(limit: number) {
-    return getRecentWalkCellsUseCase.execute({ limit });
-  },
-};
-
+} = walkHistory;
 const {
   aggregateTrackingSessionStatsUseCase,
   ensureLocalPoiCoverageUseCase,
@@ -35,10 +26,8 @@ const {
   getUserStartPointUseCase,
   resolveRouteSelectionUseCase,
   saveLastKnownUserStartPointUseCase,
-} = createWalkRouteModule({
-  mapboxAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN!,
-  recentWalkCells: recentWalkCellsPort,
-});
+} = walkRoute;
+const { getUserHealthProfileUseCase } = userSettings;
 
 function hasPositionChanged(previous: Coordinates | null, current: Coordinates): boolean {
   if (!previous) {
@@ -63,9 +52,16 @@ function hasPositionChanged(previous: Coordinates | null, current: Coordinates):
   return distanceMeters >= 15;
 }
 
-function estimateCaloriesBurned(durationSeconds: number): number {
+function estimateCaloriesBurned(
+  durationSeconds: number,
+  profile: UserHealthProfile,
+): number {
   const durationHours = durationSeconds / 3600;
-  return WALKING_MET * DEFAULT_USER_WEIGHT_KG * durationHours;
+  const heightMeters = profile.heightCm / 100;
+  const bmi =
+    heightMeters > 0 ? profile.weightKg / (heightMeters * heightMeters) : 22;
+  const bmiAdjustment = Math.max(0.9, Math.min(1.1, 1 + (bmi - 22) * 0.01));
+  return WALKING_MET * profile.weightKg * durationHours * bmiAdjustment;
 }
 
 export function useHomeScreenController() {
@@ -97,6 +93,10 @@ export function useHomeScreenController() {
   const [isResolvingStartPoint, setIsResolvingStartPoint] = useState(true);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [userHealthProfile, setUserHealthProfile] = useState<UserHealthProfile>({
+    weightKg: 70,
+    heightCm: 175,
+  });
   const mapFollowResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastManualCameraUpdateMsRef = useRef(0);
 
@@ -153,6 +153,19 @@ export function useHomeScreenController() {
     loadLastKnownUserLocation();
     loadUserLocation();
   }, [resolveUserStartPoint]);
+
+  useEffect(() => {
+    async function loadHealthProfile() {
+      try {
+        const profile = await getUserHealthProfileUseCase.execute();
+        setUserHealthProfile(profile);
+      } catch (profileError) {
+        console.error(profileError);
+      }
+    }
+
+    loadHealthProfile();
+  }, []);
 
   const selectedRoute = resolveRouteSelectionUseCase.resolveSelectedRoute({
     route,
@@ -442,7 +455,10 @@ export function useHomeScreenController() {
     trackingStats,
     trackedDurationSeconds,
     trackedDistanceKm: trackingStats.trackedDistanceMeters / 1000,
-    estimatedCalories: estimateCaloriesBurned(trackedDurationSeconds),
+    estimatedCalories: estimateCaloriesBurned(
+      trackedDurationSeconds,
+      userHealthProfile,
+    ),
     gpsTrackedCoordinates,
     manualCameraPosition,
     handleGenerateRoute,
