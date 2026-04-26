@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Button, ScrollView, Text } from "react-native";
+import { ActivityIndicator, Button, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 
@@ -61,6 +61,7 @@ export default function HomeScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSavingWalk, setIsSavingWalk] = useState(false);
   const [isGpsTracking, setIsGpsTracking] = useState(false);
+  const [isMapInteracting, setIsMapInteracting] = useState(false);
   const [gpsProgressPercent, setGpsProgressPercent] = useState(0);
   const [gpsTrackedCoordinates, setGpsTrackedCoordinates] =
     useState<Coordinates | null>(null);
@@ -306,6 +307,7 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={{ paddingVertical: 16, gap: 12 }}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={!isMapInteracting}
       >
         <Button
           title={
@@ -401,11 +403,17 @@ export default function HomeScreen() {
                 Mise a jour de votre position...
               </Text>
             ) : null}
-          <Map
-            userCoordinates={userCoordinates}
-            trackedUserCoordinates={gpsTrackedCoordinates}
-            routeGeometry={route?.geometry ?? []}
-          />
+          <View
+            onTouchStart={() => setIsMapInteracting(true)}
+            onTouchEnd={() => setIsMapInteracting(false)}
+            onTouchCancel={() => setIsMapInteracting(false)}
+          >
+            <Map
+              userCoordinates={userCoordinates}
+              trackedUserCoordinates={gpsTrackedCoordinates}
+              routeGeometry={route?.geometry ?? []}
+            />
+          </View>
           </>
         )}
 
