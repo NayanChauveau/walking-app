@@ -14,19 +14,19 @@ import { H3WaypointCandidateScoringAdapter } from "./h3/H3WaypointCandidateScori
 import { ExpoUserStartPointAdapter } from "./location/ExpoUserStartPointAdapter";
 import { FileSystemUserStartPointCacheAdapter } from "./location/FileSystemUserStartPointCacheAdapter";
 import { MathRandomAdapter } from "./random/MathRandomAdapter";
-import { OpenRouteServiceAdapter } from "./routing/OpenRouteServiceAdapter";
+import { MapboxDirectionsAdapter } from "./routing/MapboxDirectionsAdapter";
 
 type Input = {
-  openRouteServiceApiKey: string;
+  mapboxAccessToken: string;
   recentWalkCells: RecentWalkCellsPort;
 };
 
 export function createWalkRouteModule({
-  openRouteServiceApiKey,
+  mapboxAccessToken,
   recentWalkCells,
 }: Input) {
   const random = new MathRandomAdapter();
-  const routing = new OpenRouteServiceAdapter(openRouteServiceApiKey);
+  const routing = new MapboxDirectionsAdapter(mapboxAccessToken);
   const ellipseGeneration = new DomainEllipseGenerationAdapter(random);
   const waypointGeneration = new DomainWaypointGenerationAdapter();
   const polylineCells = new H3PolylineCellsAdapter();

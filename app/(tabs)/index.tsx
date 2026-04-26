@@ -35,7 +35,7 @@ const {
   getUserStartPointUseCase,
   saveLastKnownUserStartPointUseCase,
 } = createWalkRouteModule({
-  openRouteServiceApiKey: process.env.EXPO_PUBLIC_OPENROUTESERVICE_API_KEY!,
+  mapboxAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN!,
   recentWalkCells: recentWalkCellsPort,
 });
 
