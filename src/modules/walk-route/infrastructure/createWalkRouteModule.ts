@@ -1,6 +1,7 @@
 import { GetLastKnownUserStartPointUseCase } from "../application/use-cases/GetLastKnownUserStartPointUseCase";
 import { GenerateWaypointCandidatesUseCase } from "../application/use-cases/GenerateWaypointCandidatesUseCase";
 import { PreScoreWaypointCandidatesUseCase } from "../application/use-cases/PreScoreWaypointCandidatesUseCase";
+import { ScoreGeneratedRoutesUseCase } from "../application/use-cases/ScoreGeneratedRoutesUseCase";
 import { GenerateEllipseForWalkUseCase } from "../application/use-cases/GenerateEllipseForWalkUseCase";
 import { GenerateWalkCandidateUseCase } from "../application/use-cases/GenerateWalkCandidateUseCase";
 import { GetUserStartPointUseCase } from "../application/use-cases/GetUserStartPointUseCase";
@@ -38,6 +39,7 @@ export function createWalkRouteModule({
     routing,
     new GenerateWaypointCandidatesUseCase(ellipseGeneration, waypointGeneration),
     new PreScoreWaypointCandidatesUseCase(h3Scoring),
+    new ScoreGeneratedRoutesUseCase(),
     recentWalkCells,
     polylineCells,
   );

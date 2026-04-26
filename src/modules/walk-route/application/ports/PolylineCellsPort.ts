@@ -5,4 +5,9 @@ export interface PolylineCellsPort {
     polyline: Coordinates[];
     resolution?: number;
   }): string[];
+
+  extractPathFromPolyline(input: {
+    polyline: Coordinates[];
+    resolution?: number;
+  }): string[];
 }

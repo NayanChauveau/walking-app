@@ -1,5 +1,6 @@
 import type { WalkRoute } from "../../domain/entities/WalkRoute";
 import type { Coordinates } from "../../domain/value-objects/Coordinates";
+import { calculateTargetWalkingDistanceMeters } from "../../domain/services/WalkingDistanceCalculator";
 import type { PolylineCellsPort } from "../ports/PolylineCellsPort";
 import type { RecentWalkCellsPort } from "../ports/RecentWalkCellsPort";
 import type { RoutingPort } from "../ports/RoutingPort";
@@ -10,6 +11,10 @@ import {
   PreScoreWaypointCandidatesUseCase,
   type PreScoredWaypointCandidate,
 } from "./PreScoreWaypointCandidatesUseCase";
+import {
+  ScoreGeneratedRoutesUseCase,
+  type RouteScoreDetails,
+} from "./ScoreGeneratedRoutesUseCase";
 
 type Input = {
   start: Coordinates;
@@ -25,11 +30,15 @@ export class GenerateWalkRouteUseCase {
     private readonly routing: RoutingPort,
     private readonly generateWaypointCandidates: GenerateWaypointCandidatesUseCase,
     private readonly preScoreWaypointCandidates: PreScoreWaypointCandidatesUseCase,
+    private readonly scoreGeneratedRoutes: ScoreGeneratedRoutesUseCase,
     private readonly recentWalkCells: RecentWalkCellsPort,
     private readonly polylineCells: PolylineCellsPort,
   ) {}
 
   async execute(input: Input): Promise<WalkRoute> {
+    const targetDistanceMeters = calculateTargetWalkingDistanceMeters({
+      targetDurationMinutes: input.targetDurationMinutes,
+    });
     const recentWalkCells = await this.recentWalkCells.listRecentTraversedCells(100);
     const seenCells = new Set(recentWalkCells.flat());
     console.log("[walk-route] novelty baseline", {
@@ -40,6 +49,9 @@ export class GenerateWalkRouteUseCase {
     let bestRoute: WalkRoute | null = null;
     let bestScore = Number.NEGATIVE_INFINITY;
     let testedCandidates = 0;
+    let rejectedCandidates = 0;
+    let bestRejectedRoute: WalkRoute | null = null;
+    let bestRejectedScore = Number.NEGATIVE_INFINITY;
 
     const generatedCandidates = this.generateWaypointCandidates.execute({
       start: input.start,
@@ -86,9 +98,16 @@ export class GenerateWalkRouteUseCase {
           const traversedCells = this.polylineCells.extractFromPolyline({
             polyline: route.geometry,
           });
-          const noveltyScore = this.calculateNoveltyScore({
+          const traversedCellPath = this.polylineCells.extractPathFromPolyline({
+            polyline: route.geometry,
+          });
+          const scoreDetails: RouteScoreDetails = this.scoreGeneratedRoutes.execute({
+            route,
             traversedCells,
+            traversedCellPath,
             seenCells,
+            targetDistanceMeters,
+            targetDurationMinutes: input.targetDurationMinutes,
           });
           console.log("[walk-route] candidate evaluated", {
             ellipseIndex: routingCandidate.ellipseIndex,
@@ -97,11 +116,27 @@ export class GenerateWalkRouteUseCase {
             distanceKm: Number((route.distanceMeters / 1000).toFixed(2)),
             durationMin: Math.round(route.durationSeconds / 60),
             traversedCells: traversedCells.length,
-            noveltyScore: Number(noveltyScore.toFixed(4)),
+            noveltyScore: Number(scoreDetails.noveltyScore.toFixed(4)),
+            loopQualityScore: Number(scoreDetails.loopQualityScore.toFixed(4)),
+            backtrackRatio: Number(scoreDetails.backtrackRatio.toFixed(4)),
+            revisitRatio: Number(scoreDetails.revisitRatio.toFixed(4)),
+            repeatedEdgeRatio: Number(scoreDetails.repeatedEdgeRatio.toFixed(4)),
+            totalScore: Number(scoreDetails.totalScore.toFixed(4)),
+            isRejected: scoreDetails.isRejected,
+            rejectionReason: scoreDetails.rejectionReason,
           });
 
-          if (noveltyScore > bestScore) {
-            bestScore = noveltyScore;
+          if (scoreDetails.isRejected) {
+            rejectedCandidates += 1;
+            if (scoreDetails.totalScore > bestRejectedScore) {
+              bestRejectedScore = scoreDetails.totalScore;
+              bestRejectedRoute = route;
+            }
+            continue;
+          }
+
+          if (scoreDetails.totalScore > bestScore) {
+            bestScore = scoreDetails.totalScore;
             bestRoute = route;
             console.log("[walk-route] candidate is new best", {
               ellipseIndex: routingCandidate.ellipseIndex,
@@ -126,39 +161,29 @@ export class GenerateWalkRouteUseCase {
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
     if (!bestRoute) {
-      throw new Error("No walk route candidate could be generated");
+      if (bestRejectedRoute) {
+        console.warn(
+          "[walk-route] all candidates rejected by loop-quality filter, using best rejected route",
+          { rejectedCandidates, testedCandidates },
+        );
+        bestRoute = bestRejectedRoute;
+        bestScore = bestRejectedScore;
+      } else {
+        throw new Error("No walk route candidate could be generated");
+      }
     }
 
     const selectedRoute: WalkRoute = bestRoute;
 
     console.log("[walk-route] selected route", {
       testedCandidates,
+      rejectedCandidates,
       selectedDistanceKm: Number((selectedRoute.distanceMeters / 1000).toFixed(2)),
       selectedDurationMin: Math.round(selectedRoute.durationSeconds / 60),
-      finalNoveltyScore: Number(bestScore.toFixed(4)),
+      finalRouteScore: Number(bestScore.toFixed(4)),
     });
 
     return selectedRoute;
-  }
-
-  private calculateNoveltyScore(input: {
-    traversedCells: string[];
-    seenCells: Set<string>;
-  }): number {
-    if (input.traversedCells.length === 0) {
-      return 0;
-    }
-
-    let novelCount = 0;
-    for (const cell of input.traversedCells) {
-      if (!input.seenCells.has(cell)) {
-        novelCount += 1;
-      }
-    }
-
-    const novelRatio = novelCount / input.traversedCells.length;
-
-    return novelRatio + novelCount * 0.001;
   }
 
   private selectTopCandidates(

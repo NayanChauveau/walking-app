@@ -19,4 +19,24 @@ export class H3PolylineCellsAdapter implements PolylineCellsPort {
 
     return Array.from(uniqueCells);
   }
+
+  extractPathFromPolyline(input: {
+    polyline: Coordinates[];
+    resolution?: number;
+  }): string[] {
+    const resolution = input.resolution ?? DEFAULT_H3_RESOLUTION;
+    const path: string[] = [];
+
+    for (const point of input.polyline) {
+      const cell = geoToH3Cell(point.latitude, point.longitude, resolution);
+      const previousCell = path[path.length - 1];
+
+      // Collapse consecutive duplicate cells to keep only transitions.
+      if (cell !== previousCell) {
+        path.push(cell);
+      }
+    }
+
+    return path;
+  }
 }
