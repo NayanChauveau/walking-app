@@ -11,6 +11,7 @@ type MapProps = {
     coordinates: Coordinates;
     zoom: number;
   } | null;
+  onCameraMove?: (camera: { coordinates: Coordinates; zoom: number }) => void;
 };
 
 function getCameraPositionForGeometry(geometry: Coordinates[]) {
@@ -45,6 +46,7 @@ export default function Map({
   routeGeometry = [],
   traversedUntilIndex = 0,
   cameraOverride = null,
+  onCameraMove,
 }: MapProps) {
   const mapStyle = {
     height: 500,
@@ -136,6 +138,25 @@ export default function Map({
         polylines={polylines}
         properties={{ isMyLocationEnabled: true }}
         uiSettings={{ myLocationButtonEnabled: true }}
+        onCameraMove={
+          onCameraMove
+            ? (event) => {
+                if (
+                  event.coordinates.latitude === undefined ||
+                  event.coordinates.longitude === undefined
+                ) {
+                  return;
+                }
+                onCameraMove({
+                  coordinates: {
+                    latitude: event.coordinates.latitude,
+                    longitude: event.coordinates.longitude,
+                  },
+                  zoom: event.zoom,
+                });
+              }
+            : undefined
+        }
       />
     );
   }
@@ -149,6 +170,25 @@ export default function Map({
         polylines={polylines}
         properties={{ isMyLocationEnabled: true }}
         uiSettings={{ myLocationButtonEnabled: true }}
+        onCameraMove={
+          onCameraMove
+            ? (event) => {
+                if (
+                  event.coordinates.latitude === undefined ||
+                  event.coordinates.longitude === undefined
+                ) {
+                  return;
+                }
+                onCameraMove({
+                  coordinates: {
+                    latitude: event.coordinates.latitude,
+                    longitude: event.coordinates.longitude,
+                  },
+                  zoom: event.zoom,
+                });
+              }
+            : undefined
+        }
       />
     );
   }

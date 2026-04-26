@@ -66,6 +66,10 @@ export default function HomeScreen() {
   const [gpsProgressPercent, setGpsProgressPercent] = useState(0);
   const [traversedRouteIndex, setTraversedRouteIndex] = useState(0);
   const [gpsTrackedPath, setGpsTrackedPath] = useState<Coordinates[]>([]);
+  const [manualCameraPosition, setManualCameraPosition] = useState<{
+    coordinates: Coordinates;
+    zoom: number;
+  } | null>(null);
   const [gpsTrackedCoordinates, setGpsTrackedCoordinates] =
     useState<Coordinates | null>(null);
   const [gpsSubscription, setGpsSubscription] =
@@ -76,6 +80,7 @@ export default function HomeScreen() {
   const mapFollowResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const lastManualCameraUpdateMsRef = useRef(0);
 
   function hasPositionChanged(
     previous: Coordinates | null,
@@ -252,6 +257,7 @@ export default function HomeScreen() {
       setGpsProgressPercent(0);
       setTraversedRouteIndex(0);
       setGpsTrackedPath([]);
+      setManualCameraPosition(null);
       setIsGpsTracking(true);
       setIsCameraFollowingGps(true);
 
@@ -323,6 +329,7 @@ export default function HomeScreen() {
       setGpsTrackedPath([]);
       setGpsProgressPercent(0);
       setTraversedRouteIndex(0);
+      setManualCameraPosition(null);
       handleStopGpsTracking();
     } catch (storageError) {
       console.error(storageError);
@@ -349,17 +356,53 @@ export default function HomeScreen() {
     }
 
     setIsCameraFollowingGps(false);
+    setManualCameraPosition((previous) => {
+      if (previous) {
+        return previous;
+      }
+
+      if (gpsTrackedCoordinates) {
+        return {
+          coordinates: gpsTrackedCoordinates,
+          zoom: 17,
+        };
+      }
+
+      return previous;
+    });
     if (mapFollowResumeTimeoutRef.current) {
       clearTimeout(mapFollowResumeTimeoutRef.current);
-    }
-    mapFollowResumeTimeoutRef.current = setTimeout(() => {
-      setIsCameraFollowingGps(true);
       mapFollowResumeTimeoutRef.current = null;
-    }, 4000);
+    }
   }
 
   function handleMapTouchEnd() {
     setIsMapInteracting(false);
+  }
+
+  function handleMapCameraMove(camera: {
+    coordinates: Coordinates;
+    zoom: number;
+  }) {
+    if (!isGpsTracking) {
+      return;
+    }
+
+    if (!isCameraFollowingGps) {
+      const now = Date.now();
+      if (now - lastManualCameraUpdateMsRef.current < 120) {
+        return;
+      }
+      lastManualCameraUpdateMsRef.current = now;
+      setManualCameraPosition(camera);
+      if (mapFollowResumeTimeoutRef.current) {
+        clearTimeout(mapFollowResumeTimeoutRef.current);
+      }
+      mapFollowResumeTimeoutRef.current = setTimeout(() => {
+        setIsCameraFollowingGps(true);
+        mapFollowResumeTimeoutRef.current = null;
+      }, 4000);
+    }
   }
 
   return (
@@ -485,8 +528,11 @@ export default function HomeScreen() {
                       coordinates: gpsTrackedCoordinates,
                       zoom: 17,
                     }
+                  : isGpsTracking && !isCameraFollowingGps && manualCameraPosition
+                    ? manualCameraPosition
                   : null
               }
+              onCameraMove={handleMapCameraMove}
             />
           </View>
           </>
