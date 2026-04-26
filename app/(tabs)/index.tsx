@@ -5,6 +5,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -12,6 +13,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 
 import Map from "@/components/map";
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
@@ -712,66 +715,67 @@ export default function HomeScreen() {
         transparent
         onRequestClose={() => setIsStopTrackingModalVisible(false)}
       >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.45)",
-            justifyContent: "center",
-            paddingHorizontal: 20,
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: theme.background,
-              borderRadius: 16,
-              padding: 16,
-              gap: 10,
-            }}
-          >
-            <Text style={{ color: theme.text, fontSize: 18, fontWeight: "600" }}>
-              Arreter ce parcours ?
-            </Text>
-            <Text style={{ color: theme.text }}>
-              Distance: {trackedDistanceKm.toFixed(2)} km
-            </Text>
-            <Text style={{ color: theme.text }}>
+        <ThemedView style={styles.modalBackdrop}>
+          <ThemedView style={styles.modalCard}>
+            <ThemedText type="title">Arreter ce parcours ?</ThemedText>
+            <ThemedText>Distance: {trackedDistanceKm.toFixed(2)} km</ThemedText>
+            <ThemedText>
               Temps total: {Math.round(trackedDurationSeconds / 60)} min
-            </Text>
-            <Text style={{ color: theme.text }}>
+            </ThemedText>
+            <ThemedText>
               Vitesse moyenne: {averageTrackedSpeedKmh.toFixed(1)} km/h
-            </Text>
-            <Text style={{ color: theme.text }}>
+            </ThemedText>
+            <ThemedText>
               Calories estimees: {Math.round(estimatedCalories)} kcal
-            </Text>
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-              <Pressable
-                onPress={handleAcceptStopTracking}
-                style={{
-                  flex: 1,
-                  backgroundColor: "#3fb950",
-                  borderRadius: 10,
-                  paddingVertical: 12,
-                  alignItems: "center",
-                }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "600" }}>Accepter</Text>
+            </ThemedText>
+            <View style={styles.modalButtonsRow}>
+              <Pressable onPress={handleAcceptStopTracking} style={styles.acceptButton}>
+                <Text style={styles.buttonText}>Accepter</Text>
               </Pressable>
-              <Pressable
-                onPress={handleDiscardTrackedWalk}
-                style={{
-                  flex: 1,
-                  backgroundColor: "#ff4d4f",
-                  borderRadius: 10,
-                  paddingVertical: 12,
-                  alignItems: "center",
-                }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "600" }}>Supprimer</Text>
+              <Pressable onPress={handleDiscardTrackedWalk} style={styles.deleteButton}>
+                <Text style={styles.buttonText}>Supprimer</Text>
               </Pressable>
             </View>
-          </View>
-        </View>
+          </ThemedView>
+        </ThemedView>
       </Modal>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  modalCard: {
+    borderRadius: 16,
+    padding: 16,
+    gap: 10,
+  },
+  modalButtonsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 8,
+  },
+  acceptButton: {
+    flex: 1,
+    backgroundColor: "#3fb950",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  deleteButton: {
+    flex: 1,
+    backgroundColor: "#ff4d4f",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+});
