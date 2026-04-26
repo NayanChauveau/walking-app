@@ -46,4 +46,9 @@ export class FileSystemWalkHistoryRepository implements WalkHistoryRepository {
 
     return normalized.sort((a, b) => b.completedAtIso.localeCompare(a.completedAtIso));
   }
+
+  async clear(): Promise<void> {
+    await ensureHistoryFile();
+    await FileSystem.writeAsStringAsync(HISTORY_FILE_PATH, "[]");
+  }
 }

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Button, ScrollView, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Button,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 
@@ -19,6 +27,7 @@ import {
 } from "@/src/modules/walk-history";
 
 const {
+  clearWalkHistoryUseCase,
   completeWalkUseCase,
   getRecentWalkCellsUseCase,
   getWalkInsightsUseCase,
@@ -39,6 +48,9 @@ const {
   mapboxAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN!,
   recentWalkCells: recentWalkCellsPort,
 });
+
+const DEFAULT_USER_WEIGHT_KG = 70;
+const WALKING_MET = 3.5;
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
@@ -63,6 +75,13 @@ export default function HomeScreen() {
   const [isGpsTracking, setIsGpsTracking] = useState(false);
   const [isCameraFollowingGps, setIsCameraFollowingGps] = useState(false);
   const [isMapInteracting, setIsMapInteracting] = useState(false);
+  const [isStopTrackingModalVisible, setIsStopTrackingModalVisible] = useState(false);
+  const [trackingStartTimestampMs, setTrackingStartTimestampMs] = useState<number | null>(
+    null,
+  );
+  const [trackedDistanceMeters, setTrackedDistanceMeters] = useState(0);
+  const [currentSpeedKmh, setCurrentSpeedKmh] = useState(0);
+  const [averageTrackedSpeedKmh, setAverageTrackedSpeedKmh] = useState(0);
   const [gpsProgressPercent, setGpsProgressPercent] = useState(0);
   const [traversedRouteIndex, setTraversedRouteIndex] = useState(0);
   const [gpsTrackedPath, setGpsTrackedPath] = useState<Coordinates[]>([]);
@@ -77,6 +96,11 @@ export default function HomeScreen() {
   const [isResolvingStartPoint, setIsResolvingStartPoint] = useState(true);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const lastTrackedSampleRef = useRef<{
+    coordinates: Coordinates;
+    timestampMs: number;
+  } | null>(null);
+  const trackingSpeedSamplesRef = useRef<number[]>([]);
   const mapFollowResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -240,6 +264,18 @@ export default function HomeScreen() {
     return Math.max(0, Math.min(100, progress));
   }
 
+  function getTrackedDurationSeconds(): number {
+    if (!trackingStartTimestampMs) {
+      return 0;
+    }
+    return Math.max(0, Math.round((Date.now() - trackingStartTimestampMs) / 1000));
+  }
+
+  function estimateCaloriesBurned(durationSeconds: number): number {
+    const durationHours = durationSeconds / 3600;
+    return WALKING_MET * DEFAULT_USER_WEIGHT_KG * durationHours;
+  }
+
   async function handleStartGpsTracking() {
     if (!route || isGpsTracking) {
       return;
@@ -257,6 +293,12 @@ export default function HomeScreen() {
       setGpsProgressPercent(0);
       setTraversedRouteIndex(0);
       setGpsTrackedPath([]);
+      setTrackedDistanceMeters(0);
+      setCurrentSpeedKmh(0);
+      setAverageTrackedSpeedKmh(0);
+      setTrackingStartTimestampMs(Date.now());
+      lastTrackedSampleRef.current = null;
+      trackingSpeedSamplesRef.current = [];
       setManualCameraPosition(null);
       setIsGpsTracking(true);
       setIsCameraFollowingGps(true);
@@ -268,12 +310,44 @@ export default function HomeScreen() {
           distanceInterval: 3,
         },
         (position) => {
+          const sampleTimestampMs =
+            typeof position.timestamp === "number" ? position.timestamp : Date.now();
           const nextCoordinates = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
           };
           setGpsTrackedCoordinates(nextCoordinates);
           setGpsTrackedPath((previousPath) => [...previousPath, nextCoordinates]);
+
+          const previousSample = lastTrackedSampleRef.current;
+          if (previousSample) {
+            const segmentDistanceMeters = getDistanceMeters(
+              previousSample.coordinates,
+              nextCoordinates,
+            );
+            const elapsedSeconds = Math.max(
+              0.001,
+              (sampleTimestampMs - previousSample.timestampMs) / 1000,
+            );
+            const instantSpeedKmh = (segmentDistanceMeters / elapsedSeconds) * 3.6;
+            const boundedInstantSpeedKmh = Math.min(25, Math.max(0, instantSpeedKmh));
+
+            setTrackedDistanceMeters((previousDistance) => {
+              const nextDistance = previousDistance + segmentDistanceMeters;
+              return nextDistance;
+            });
+            setCurrentSpeedKmh(boundedInstantSpeedKmh);
+            trackingSpeedSamplesRef.current.push(boundedInstantSpeedKmh);
+            const samples = trackingSpeedSamplesRef.current;
+            const averageSpeed =
+              samples.reduce((sum, value) => sum + value, 0) / samples.length;
+            setAverageTrackedSpeedKmh(averageSpeed);
+          }
+
+          lastTrackedSampleRef.current = {
+            coordinates: nextCoordinates,
+            timestampMs: sampleTimestampMs,
+          };
           const nearestRouteIndex = findNearestGeometryIndex(
             route.geometry,
             nextCoordinates,
@@ -304,6 +378,71 @@ export default function HomeScreen() {
     }
   }
 
+  function resetTrackingState() {
+    setGpsTrackedCoordinates(null);
+    setGpsTrackedPath([]);
+    setGpsProgressPercent(0);
+    setTraversedRouteIndex(0);
+    setTrackedDistanceMeters(0);
+    setCurrentSpeedKmh(0);
+    setAverageTrackedSpeedKmh(0);
+    setTrackingStartTimestampMs(null);
+    lastTrackedSampleRef.current = null;
+    trackingSpeedSamplesRef.current = [];
+    setManualCameraPosition(null);
+  }
+
+  function handleRequestStopGpsTracking() {
+    if (!isGpsTracking) {
+      return;
+    }
+
+    handleStopGpsTracking();
+    setIsStopTrackingModalVisible(true);
+  }
+
+  async function handleAcceptStopTracking() {
+    if (!route) {
+      setIsStopTrackingModalVisible(false);
+      return;
+    }
+
+    const trackedDurationSeconds = getTrackedDurationSeconds();
+
+    try {
+      setIsSavingWalk(true);
+      setError(null);
+      setSuccessMessage(null);
+
+      await completeWalkUseCase.execute({
+        route,
+        actualPath: gpsTrackedPath.length > 1 ? gpsTrackedPath : undefined,
+        actualDurationSeconds: trackedDurationSeconds,
+        actualDistanceMeters: trackedDistanceMeters,
+        averageSpeedKmh: averageTrackedSpeedKmh,
+      });
+      const refreshedInsights = await getWalkInsightsUseCase.execute();
+      setInsights(refreshedInsights);
+      setSuccessMessage("Parcours enregistre. Bravo !");
+      setRoute(null);
+      resetTrackingState();
+    } catch (storageError) {
+      console.error(storageError);
+      setError("Impossible d'enregistrer ce parcours.");
+    } finally {
+      setIsSavingWalk(false);
+      setIsStopTrackingModalVisible(false);
+    }
+  }
+
+  function handleDiscardTrackedWalk() {
+    setRoute(null);
+    resetTrackingState();
+    setSuccessMessage("Parcours supprime.");
+    setError(null);
+    setIsStopTrackingModalVisible(false);
+  }
+
   async function handleConfirmWalkCompletion() {
     if (!route) {
       return;
@@ -325,17 +464,27 @@ export default function HomeScreen() {
       setInsights(refreshedInsights);
       setSuccessMessage("Parcours enregistre. Bravo !");
       setRoute(null);
-      setGpsTrackedCoordinates(null);
-      setGpsTrackedPath([]);
-      setGpsProgressPercent(0);
-      setTraversedRouteIndex(0);
-      setManualCameraPosition(null);
+      resetTrackingState();
       handleStopGpsTracking();
     } catch (storageError) {
       console.error(storageError);
       setError("Impossible d'enregistrer ce parcours.");
     } finally {
       setIsSavingWalk(false);
+    }
+  }
+
+  async function handleClearHistoryForDebug() {
+    try {
+      setError(null);
+      setSuccessMessage(null);
+      await clearWalkHistoryUseCase.execute();
+      const refreshedInsights = await getWalkInsightsUseCase.execute();
+      setInsights(refreshedInsights);
+      setSuccessMessage("Historique vide (debug).");
+    } catch (clearError) {
+      console.error(clearError);
+      setError("Impossible de vider l'historique.");
     }
   }
 
@@ -400,10 +549,15 @@ export default function HomeScreen() {
       }
       mapFollowResumeTimeoutRef.current = setTimeout(() => {
         setIsCameraFollowingGps(true);
+        setManualCameraPosition(null);
         mapFollowResumeTimeoutRef.current = null;
       }, 4000);
     }
   }
+
+  const trackedDurationSeconds = getTrackedDurationSeconds();
+  const trackedDistanceKm = trackedDistanceMeters / 1000;
+  const estimatedCalories = estimateCaloriesBurned(trackedDurationSeconds);
 
   return (
     <SafeAreaView
@@ -427,7 +581,7 @@ export default function HomeScreen() {
         />
         <Button
           title={isGpsTracking ? "Arreter le suivi GPS" : "Demarrer le parcours GPS"}
-          onPress={isGpsTracking ? handleStopGpsTracking : handleStartGpsTracking}
+          onPress={isGpsTracking ? handleRequestStopGpsTracking : handleStartGpsTracking}
           disabled={!route}
         />
 
@@ -439,6 +593,13 @@ export default function HomeScreen() {
           <Text style={{ color: theme.text }}>
             Suivi GPS actif - progression sur la polyline choisie:{" "}
             {Math.round(gpsProgressPercent)}%
+          </Text>
+        ) : null}
+        {isGpsTracking ? (
+          <Text style={{ color: theme.text }}>
+            Distance: {trackedDistanceKm.toFixed(2)} km · Temps:{" "}
+            {Math.round(trackedDurationSeconds / 60)} min · Vitesse:{" "}
+            {currentSpeedKmh.toFixed(1)} km/h
           </Text>
         ) : null}
         {isGpsTracking && !isCameraFollowingGps ? (
@@ -538,12 +699,79 @@ export default function HomeScreen() {
           </>
         )}
 
-        <Button
-          title={isSavingWalk ? "Enregistrement..." : "Terminer le parcours"}
-          onPress={handleConfirmWalkCompletion}
-          disabled={!route || isSavingWalk}
-        />
+        {__DEV__ ? (
+          <Button
+            title="DEBUG: Vider tout l'historique"
+            onPress={handleClearHistoryForDebug}
+          />
+        ) : null}
       </ScrollView>
+      <Modal
+        visible={isStopTrackingModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setIsStopTrackingModalVisible(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            justifyContent: "center",
+            paddingHorizontal: 20,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: theme.background,
+              borderRadius: 16,
+              padding: 16,
+              gap: 10,
+            }}
+          >
+            <Text style={{ color: theme.text, fontSize: 18, fontWeight: "600" }}>
+              Arreter ce parcours ?
+            </Text>
+            <Text style={{ color: theme.text }}>
+              Distance: {trackedDistanceKm.toFixed(2)} km
+            </Text>
+            <Text style={{ color: theme.text }}>
+              Temps total: {Math.round(trackedDurationSeconds / 60)} min
+            </Text>
+            <Text style={{ color: theme.text }}>
+              Vitesse moyenne: {averageTrackedSpeedKmh.toFixed(1)} km/h
+            </Text>
+            <Text style={{ color: theme.text }}>
+              Calories estimees: {Math.round(estimatedCalories)} kcal
+            </Text>
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+              <Pressable
+                onPress={handleAcceptStopTracking}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#3fb950",
+                  borderRadius: 10,
+                  paddingVertical: 12,
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "600" }}>Accepter</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleDiscardTrackedWalk}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#ff4d4f",
+                  borderRadius: 10,
+                  paddingVertical: 12,
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "600" }}>Supprimer</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
