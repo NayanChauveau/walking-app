@@ -1,5 +1,5 @@
-import type { RandomPort } from "../ports/RandomPort";
 import type { Ellipse } from "../entities/Ellipse";
+import type { RandomPort } from "../ports/RandomPort";
 import type { Coordinates } from "../value-objects/Coordinates";
 
 type GenerateEllipseInput = {
@@ -34,6 +34,7 @@ export class EllipseGenerator {
     };
   }
 
+  /** Center such that `start` matches parametric angle 0 (same convention as waypoint / polyline sampling). */
   private computeCenterFromStart({
     start,
     semiMajorMeters,
@@ -45,13 +46,13 @@ export class EllipseGenerator {
   }): Coordinates {
     const earthRadiusMeters = 6_371_000;
 
-    const distance = semiMajorMeters;
-    const bearing = rotationRadians;
+    const eastMeters = -semiMajorMeters * Math.cos(rotationRadians);
+    const northMeters = -semiMajorMeters * Math.sin(rotationRadians);
 
-    const deltaLatitude = (distance * Math.cos(bearing)) / earthRadiusMeters;
+    const deltaLatitude = northMeters / earthRadiusMeters;
 
     const deltaLongitude =
-      (distance * Math.sin(bearing)) /
+      eastMeters /
       (earthRadiusMeters * Math.cos((start.latitude * Math.PI) / 180));
 
     return {
